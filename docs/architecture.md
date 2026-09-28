@@ -20,6 +20,7 @@ Next.js route handlers（src/app/api）
   ▼
 src/server（Next 專屬接點）
   │ stop-cache：程序內快取 12h、同時請求合併；過期先回舊資料並以 after() 背景刷新，失敗退避 5 分鐘
+  │ /api/trucks 另用現成快照的「路線 → 站」索引，把每台車對到站序（不等上游）
   │ next-fetcher：把 provider 的快取秒數轉成 Next data cache 的 next.revalidate
   ▼
 src/providers/registry → src/providers/new-taipei（純 TypeScript，可搬進 Worker）
@@ -32,7 +33,7 @@ src/providers/registry → src/providers/new-taipei（純 TypeScript，可搬進
 
 | 目錄 | 職責 | 不准做的事 |
 | --- | --- | --- |
-| `src/domain/` | 城市無關的型別與純函式：時間（Asia/Taipei）、距離、下一班、地點合併、資料新鮮度 | import `next/*`、React、任何 provider |
+| `src/domain/` | 城市無關的型別與純函式：時間（Asia/Taipei）、距離、下一班、地點合併、資料新鮮度、車輛站序比對 | import `next/*`、React、任何 provider |
 | `src/providers/` | 各縣市原始 API → domain 型別 | import `next/*`、React；讓原始欄位流出本資料夾 |
 | `src/server/` | provider 與 Next.js 的接點（快取、fetcher） | 被 client component import |
 | `src/app/api/` | HTTP 介面：驗證、回應格式、錯誤碼 | 記錄使用者座標；直接 import provider 內部檔案 |
@@ -54,7 +55,8 @@ src/providers/registry → src/providers/new-taipei（純 TypeScript，可搬進
 ### `GET /api/trucks?routes=a,b,c`
 
 - `routes`：1–40 個路線代碼。
-- 200：`{ trucks: GarbageTruck[], fetchedAt }`，`Cache-Control: public, s-maxage=15`。空陣列代表「這些路線目前沒有車回報位置」，是合法狀態；上游有資料但超過 20% 解析失敗時改回 502。
+- 200：`{ trucks: TrackedTruck[], fetchedAt }`，`Cache-Control: public, s-maxage=15`。
+  - `TrackedTruck` = `GarbageTruck` + `progress`：`{ status: "matched", sequence, distanceM }`（車在第幾站附近）、`{ status: "ambiguous" }`（路線繞回、分不出是哪次經過）、`{ status: "offRoute" }`（附近沒有這條路線的站），或 `null`（這台伺服器的班表尚未載入，已在背景載入；或班表沒有這條路線）。比對方式見 [`DECISIONS.md`](DECISIONS.md) D9。空陣列代表「這些路線目前沒有車回報位置」，是合法狀態；上游有資料但超過 20% 解析失敗時改回 502。
 - 前端路線超過 40 條時分批查詢；只有「該批成功」的路線才能顯示「沒有車回報」，其餘顯示「無法取得」。
 - 400 `bad_request`；502 `upstream_unavailable`。
 
