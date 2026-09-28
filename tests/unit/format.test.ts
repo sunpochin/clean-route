@@ -3,7 +3,7 @@
 // 主要關聯：src/lib/format.ts。
 
 import { describe, expect, test } from "bun:test";
-import { formatAge, formatCountdown, formatDayLabel, formatDistance } from "@/lib/format";
+import { formatAge, formatCountdown, formatDayLabel, formatDistance, formatWeekdayList } from "@/lib/format";
 
 describe("formatDistance", () => {
   test("一公里內以 10 公尺為單位，以上用公里", () => {
@@ -38,5 +38,12 @@ describe("formatAge", () => {
   test("一分鐘內顯示剛剛", () => {
     expect(formatAge(30_000)).toBe("剛剛");
     expect(formatAge(5 * 60_000)).toBe("5 分鐘前");
+  });
+});
+
+describe("formatWeekdayList", () => {
+  test("依傳入順序列出，週日不會被數字 0 排到最前面", () => {
+    expect(formatWeekdayList([3, 0])).toBe("週三、週日");
+    expect(formatWeekdayList([])).toBe("");
   });
 });

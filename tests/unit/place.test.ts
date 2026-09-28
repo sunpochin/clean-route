@@ -1,9 +1,9 @@
-// 檔案用途：驗證同地點多路線合併，以及「最快到的一班」排序（真實資料中下午班／晚上班共用路口的情境）。
+// 檔案用途：驗證同地點多路線合併、「最快到的一班」排序，以及地點詳情的完整週班表（真實資料中下午班／晚上班共用路口的情境）。
 // 所在層：tests/unit；bun:test。
 // 主要關聯：src/domain/place.ts。
 
 import { describe, expect, test } from "bun:test";
-import { groupStopsByPlace, upcomingVisits } from "@/domain/place";
+import { groupStopsByPlace, upcomingVisits, weeklySchedule } from "@/domain/place";
 import type { GarbageStop, ServiceType } from "@/domain/types";
 import { BANQIAO_STATION } from "../fixtures/landmarks";
 
@@ -53,6 +53,33 @@ describe("upcomingVisits", () => {
     expect(visits.map((v) => [v.stop.id, v.pickup.dayOffset])).toEqual([
       ["b", 0],
       ["a", 1],
+    ]);
+  });
+});
+
+describe("weeklySchedule", () => {
+  // 仿真實資料：週三、週日停收，其餘每天三種都收（新北常見排法）。
+  const all: ServiceType[] = ["garbage", "recycling", "foodScraps"];
+  const noWedSun = [[], all, all, [], all, all, all];
+
+  test("路線依時刻排序：晚上班即使在資料裡排前面，也列在下午班之後", () => {
+    const [place] = groupStopsByPlace([
+      stop("evening", "evening", "18:51", { weeklyServices: noWedSun }),
+      stop("afternoon", "afternoon", "13:49", { weeklyServices: noWedSun }),
+    ]);
+    const week = weeklySchedule(place);
+    expect(week.map((r) => r.stop.id)).toEqual(["afternoon", "evening"]);
+    // 週一開頭、週日結尾，停收日不出現
+    expect(week[0].days).toEqual([1, 2, 4, 5, 6]);
+    expect(week[0].groups).toEqual([{ services: all, days: [1, 2, 4, 5, 6] }]);
+  });
+
+  test("不同日子收的種類不同時分組，週日排在最後", () => {
+    const weeklyServices = [["garbage"], ["garbage", "recycling"], ["garbage"], ["garbage", "recycling"], [], [], []] as ServiceType[][];
+    const [place] = groupStopsByPlace([stop("a", "r", "10:00", { weeklyServices })]);
+    expect(weeklySchedule(place)[0].groups).toEqual([
+      { services: ["garbage", "recycling"], days: [1, 3] },
+      { services: ["garbage"], days: [2, 0] },
     ]);
   });
 });
