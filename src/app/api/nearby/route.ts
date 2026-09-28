@@ -1,6 +1,6 @@
 // 檔案用途：GET /api/nearby?lat=&lng=&radius= —— 回傳查詢點附近的清運點候選清單。
 // 所在層：src/app/api（Next.js route handler）；只做參數驗證、降精度與回應格式，資料來自 src/server/stop-cache.ts。
-// 主要關聯：src/lib/api-contract.ts、src/domain/geo.ts；隱私規則見 AGENTS.md § 3.5（本檔禁止記錄查詢座標）。
+// 主要關聯：src/lib/api-contract.ts、src/domain/geo.ts、src/server/stop-cache.ts（背景刷新交給 after()）；隱私規則見 AGENTS.md § 3.5（本檔禁止記錄查詢座標）。
 
 import { coarsenCoordinate, COARSEN_MAX_ERROR_M, findWithinRadius, isInTaiwan } from "@/domain/geo";
 import {
@@ -11,6 +11,7 @@ import {
   type ApiErrorBody,
   type NearbyResponse,
 } from "@/lib/api-contract";
+import { after } from "next/server";
 import { UpstreamError } from "@/providers/registry";
 import { getStopSnapshot } from "@/server/stop-cache";
 
@@ -39,6 +40,9 @@ export async function GET(request: Request) {
   try {
     // Phase 1 只有新北；多城市時改成依座標挑 provider（docs/PLAN.md Phase 3）。
     const snapshot = await getStopSnapshot("new-taipei");
+    // 班表過期時快取會先回舊資料、在背景重抓；交給 after() 才能確保 serverless 在回應送出後不會把重抓凍結在半路。
+    const { backgroundRefresh } = snapshot;
+    if (backgroundRefresh) after(() => backgroundRefresh);
     const hits = findWithinRadius(snapshot.stops, center, radius + COARSEN_MAX_ERROR_M, NEARBY_MAX_RESULTS);
     const body: NearbyResponse = {
       stops: hits.map((hit) => hit.item),
@@ -49,9 +53,11 @@ export async function GET(request: Request) {
     };
     return Response.json(body, {
       // 降精度後相鄰使用者會打到同一個 URL，CDN 快取 10 分鐘能大幅減少冷啟動重抓。
-      // 過期資料只短暫快取：上游恢復後要盡快換掉，不能讓 CDN 把「舊班表」再多供應 10 分鐘。
+      // 班表已過期（刷新中或刷新失敗）時只短暫快取：刷新中的回應 dataStale 還是 false，
+      // 若 CDN 存上 10 分鐘＋1 小時，背景刷新隨後失敗時「班表更新失敗」的警示就到不了使用者（LESSONS L7）；
+      // 刷新失敗時則要讓上游恢復後的新班表盡快換上。
       headers: {
-        "cache-control": snapshot.stale ? "public, s-maxage=60" : "public, s-maxage=600, stale-while-revalidate=3600",
+        "cache-control": snapshot.expired ? "public, s-maxage=60" : "public, s-maxage=600, stale-while-revalidate=3600",
       },
     });
   } catch (error) {
