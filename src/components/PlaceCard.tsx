@@ -1,19 +1,13 @@
 "use client";
 
-// 檔案用途：單一清運地點卡片——這個地點下一次有車的時間、收運種類、距離、負責那一班的垃圾車離這裡多遠，以及其他班次。
+// 檔案用途：單一清運地點卡片——這個地點下一次有車的時間、收運種類、距離、負責那一班的垃圾車離這裡多遠，以及其他班次；點下去打開該地點的完整週班表。
 // 所在層：src/components；純呈現元件，排程由 src/domain/place.ts 推算。
-// 主要關聯：src/components/NearbyView.tsx、src/lib/format.ts；資料誠實規則見 AGENTS.md § 3.4。
+// 主要關聯：src/components/NearbyView.tsx、src/components/PlaceDetail.tsx（點卡片後的詳情）、src/lib/format.ts；資料誠實規則見 AGENTS.md § 3.4。
 
-import { ageMs, isStale } from "@/domain/freshness";
 import type { StopPlace } from "@/domain/place";
 import { upcomingVisits } from "@/domain/place";
-import type { GarbageTruck } from "@/domain/types";
-import { formatAge, formatCountdown, formatDayLabel, formatDistance, SERVICE_LABEL } from "@/lib/format";
-
-export interface TruckNearStop {
-  truck: GarbageTruck;
-  distanceM: number;
-}
+import { formatCountdown, formatDayLabel, formatDistance, SERVICE_LABEL } from "@/lib/format";
+import { TruckStatus, type TruckNearStop } from "./TruckStatus";
 
 interface Props {
   index: number;
@@ -23,25 +17,21 @@ interface Props {
   truckByStopId: ReadonlyMap<string, TruckNearStop>;
   /** 有成功查到即時位置的路線；不在其中的路線只能說「無法取得」，不能說「沒有車在線上」。 */
   availableRouteIds: ReadonlySet<string>;
-  selected: boolean;
   onSelect: () => void;
   now: Date;
 }
 
-export function PlaceCard({ index, place, distanceM, truckByStopId, availableRouteIds, selected, onSelect, now }: Props) {
+export function PlaceCard({ index, place, distanceM, truckByStopId, availableRouteIds, onSelect, now }: Props) {
   const [next, ...others] = upcomingVisits(place, now);
   const countdown = next ? formatCountdown(next.pickup) : null;
 
   return (
-    // id 讓地圖點選時能捲動到這張卡片（NearbyView 的 selectPlace）。
+    // id 讓詳情按「返回」後能捲回並聚焦這張卡片（NearbyView），使用者不會迷失在長列表中。
     <li id={`place-${place.id}`} className="scroll-mt-3">
       <button
         type="button"
         onClick={onSelect}
-        aria-pressed={selected}
-        className={`w-full rounded-2xl border-2 p-4 text-left transition-colors ${
-          selected ? "border-accent bg-accent-soft" : "border-line bg-surface hover:border-accent/60"
-        }`}
+        className="w-full rounded-2xl border-2 border-line bg-surface p-4 text-left transition-colors hover:border-accent/60 focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-accent"
       >
         <div className="flex items-start gap-3">
           <span
@@ -98,26 +88,13 @@ export function PlaceCard({ index, place, distanceM, truckByStopId, availableRou
                 備註：{note}
               </p>
             ))}
+            {/* 明示「點了會怎樣」：整張卡片可點，但沒有提示的話，多數人只會把它當成靜態資訊。 */}
+            <p className="mt-2 text-sm font-medium text-accent-strong">
+              看完整週班表 <span aria-hidden>›</span>
+            </p>
           </div>
         </div>
       </button>
     </li>
-  );
-}
-
-function TruckStatus({ truck, trucksAvailable, now }: { truck: TruckNearStop | null; trucksAvailable: boolean; now: Date }) {
-  if (!trucksAvailable) return <p className="mt-2 text-sm text-muted">即時位置暫時無法取得</p>;
-  if (!truck) return <p className="mt-2 text-sm text-muted">這一班的車目前沒有回報位置（可能尚未出車）</p>;
-
-  const stale = isStale(truck.truck.recordedAt, now);
-  const age = ageMs(truck.truck.recordedAt, now);
-  return (
-    <p className={`mt-2 text-base font-medium ${stale ? "text-warn" : "text-live"}`}>
-      🚛 車輛距此 {formatDistance(truck.distanceM)}
-      <span className="ml-1 text-sm font-normal">
-        （{age === null ? "時間不明" : `${formatAge(age)}回報`}
-        {stale && "，位置可能過期"}）
-      </span>
-    </p>
   );
 }

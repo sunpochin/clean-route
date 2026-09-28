@@ -37,7 +37,7 @@ src/providers/registry → src/providers/new-taipei（純 TypeScript，可搬進
 | `src/server/` | provider 與 Next.js 的接點（快取、fetcher） | 被 client component import |
 | `src/app/api/` | HTTP 介面：驗證、回應格式、錯誤碼 | 記錄使用者座標；直接 import provider 內部檔案 |
 | `src/hooks/` | 瀏覽器端資料狀態（定位、查詢、輪詢） | 把位置寫進 storage |
-| `src/components/` | 呈現；區分載入／失敗／查無結果 | 直接呼叫 fetch |
+| `src/components/` | 呈現；區分載入／失敗／查無結果（列表與地圖狀態條都要）；列表 ↔ 單一地點詳情切換 | 直接呼叫 fetch |
 | `src/lib/` | 前後端共用的 API 合約、格式化、fetch 包裝 | 放商業邏輯 |
 
 ## 自家 API
