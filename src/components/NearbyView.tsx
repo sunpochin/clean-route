@@ -62,6 +62,14 @@ export function NearbyView() {
   const selectedIndex = nearby.places?.findIndex((p) => p.place.id === selection.selectedId) ?? -1;
   const selected = selectedIndex >= 0 ? nearby.places![selectedIndex] : null;
 
+  // 查詢已完成、卻找不到選取的地點：正式關閉詳情，讓歷史紀錄跟著回到列表。
+  // 只在有結果時判斷：查詢中或失敗時 places 是 undefined，那時還不能斷定地點不存在。
+  const selectionMissing = selection.selectedId !== null && nearby.places !== undefined && selectedIndex < 0;
+  const closeSelection = selection.close;
+  useEffect(() => {
+    if (selectionMissing) closeSelection();
+  }, [selectionMissing, closeSelection]);
+
   // 從詳情返回列表時捲回剛才那張卡片並聚焦：長列表裡被丟回頂端，使用者得重新找「我剛剛看到第幾個」。
   const lastSelectedRef = useRef<string | null>(null);
   useEffect(() => {
