@@ -55,7 +55,8 @@
 
 ### 3.2 城市資料隔離（Provider 邊界）
 
-- 各縣市 Open Data 的原始欄位（例如新北的 `lineid`、`garbagemonday`）**只准出現在** `src/providers/<city>/` 內。
+- 各縣市 Open Data 的原始欄位（例如新北的 `lineid`、`garbagemonday`）**只准出現在** `src/providers/<city>/` 內，包括原始格式的測試假資料（放在該資料夾的 `test-fixtures.ts`）。
+- 唯一例外是測試：`tests/unit/` 可以 import provider 內部檔案來測試它，但只能透過該 provider 的 `test-fixtures.ts` 產生原始資料，不得在 `tests/` 內自行定義原始欄位。
 - Provider 必須把資料正規化成 [`src/domain/types.ts`](src/domain/types.ts) 的型別後才能離開該資料夾；`src/app`、`src/components`、`src/domain` 不得 import 任何 provider 內部檔案，只能透過 `src/providers/registry.ts`。
 - 新增城市 = 新增一個 provider 資料夾 + 在 registry 註冊一行；如果需要改前端才能支援新城市，代表 domain 型別設計有漏洞，先修型別。
 - 為什麼：政府 API 的 schema 會變、各縣市長得完全不一樣；綁死在 UI 上，換一個城市就要重寫整個前端。

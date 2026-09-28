@@ -5,7 +5,7 @@
 import { describe, expect, test } from "bun:test";
 import { groupStopsByPlace, upcomingVisits } from "@/domain/place";
 import type { GarbageStop, ServiceType } from "@/domain/types";
-import { BANQIAO_STATION } from "../fixtures/new-taipei";
+import { BANQIAO_STATION } from "../fixtures/landmarks";
 
 const everyDay = Array.from({ length: 7 }, () => ["garbage"] as ServiceType[]);
 

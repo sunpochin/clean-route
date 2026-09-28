@@ -1,11 +1,12 @@
 // 檔案用途：新北 provider 單元測試用的假資料產生器（原始欄位格式）。
-// 所在層：tests/fixtures；座標一律使用公開地標（板橋車站周邊），不得放真實住家位置（AGENTS.md § 3.5）。
-// 主要關聯：tests/unit/new-taipei-*.test.ts、src/providers/new-taipei/raw.ts。
+// 所在層：src/providers/new-taipei；放在 provider 內而非 tests/，因為原始欄位名稱只准出現在本資料夾（AGENTS.md § 3.2）。
+//         只給測試 import，App 程式碼不引用，不會進入打包結果。
+// 主要關聯：tests/unit/new-taipei-*.test.ts、tests/unit/stop-cache.test.ts、./raw.ts。
 
-import type { RawStop, RawTruck } from "@/providers/new-taipei/raw";
+import type { RawStop, RawTruck } from "./raw";
 
-/** 板橋車站（公開地標）。 */
-export const BANQIAO_STATION = { lat: 25.0143, lng: 121.4638 };
+/** 板橋車站（公開地標）；不得放真實住家位置（AGENTS.md § 3.5）。 */
+const BANQIAO_STATION = { lat: 25.0143, lng: 121.4638 };
 
 export function rawStop(overrides: Partial<RawStop> = {}): RawStop {
   return {

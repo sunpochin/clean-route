@@ -20,6 +20,12 @@ const MIN_EXPECTED_STOPS = 10_000;
 /** 格式不符而丟棄的比例上限；超過代表上游改了 schema，要 fail loudly 而非默默少一大塊資料。 */
 const MAX_SKIPPED_RATIO = 0.05;
 
+/**
+ * 即時車輛可丟棄比例上限。比清運點寬鬆：GPS 偶有單筆座標或時間缺漏；
+ * 但若大部分都解析失敗，代表上游改了欄位或時間格式，此時回傳 [] 會被畫面誤讀成「沒有車在線上」。
+ */
+const MAX_SKIPPED_TRUCK_RATIO = 0.2;
+
 const STOPS_REVALIDATE_SECONDS = 12 * 60 * 60;
 const TRUCKS_REVALIDATE_SECONDS = 20;
 
@@ -73,7 +79,12 @@ export const newTaipeiProvider: CityProvider = {
     if (rows.length >= PAGE_SIZE) {
       throw new UpstreamError(`即時車輛達 ${rows.length} 筆，需要改成分頁抓取`, TRUCKS_DATASET_URL);
     }
-    // 夜間收班後合理地回傳 0 台車，所以這裡不設下限；「沒有車在線上」由畫面明確說明。
-    return rows.map(normalizeTruck).filter((t) => t !== null);
+    // 夜間收班後上游本身回傳 0 筆是合法狀態；但「上游有資料、我們卻解析不出來」不是（AGENTS.md § 3.4）。
+    const trucks = rows.map(normalizeTruck).filter((t) => t !== null);
+    const skipped = rows.length - trucks.length;
+    if (rows.length > 0 && skipped / rows.length > MAX_SKIPPED_TRUCK_RATIO) {
+      throw new UpstreamError(`${skipped}/${rows.length} 筆車輛資料格式不符，疑似上游欄位變更`, TRUCKS_DATASET_URL);
+    }
+    return trucks;
   },
 };

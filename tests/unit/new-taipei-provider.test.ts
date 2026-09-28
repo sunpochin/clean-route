@@ -5,7 +5,7 @@
 import { describe, expect, test } from "bun:test";
 import { newTaipeiProvider } from "@/providers/new-taipei";
 import { UpstreamError, type JsonFetcher } from "@/providers/types";
-import { rawStop, rawTruck } from "../fixtures/new-taipei";
+import { rawStop, rawTruck } from "@/providers/new-taipei/test-fixtures";
 
 const PAGE_SIZE = 1000;
 
@@ -56,10 +56,17 @@ describe("newTaipeiProvider.fetchStops", () => {
 });
 
 describe("newTaipeiProvider.fetchTrucks", () => {
-  test("正規化並丟棄壞資料", async () => {
-    const fetcher: JsonFetcher = async () => [rawTruck(), rawTruck({ car: "TEST-0002", time: "" })];
+  test("正規化並丟棄少量壞資料", async () => {
+    const good = Array.from({ length: 9 }, (_, i) => rawTruck({ car: `TEST-${i}` }));
+    const fetcher: JsonFetcher = async () => [...good, rawTruck({ car: "BAD", time: "" })];
     const trucks = await newTaipeiProvider.fetchTrucks(fetcher);
-    expect(trucks.map((t) => t.id)).toEqual(["TEST-0001"]);
+    expect(trucks).toHaveLength(9);
+    expect(trucks.some((t) => t.id === "BAD")).toBe(false);
+  });
+
+  test("上游有資料但大多解析失敗（疑似改格式）：丟 UpstreamError，不能回傳 [] 冒充「沒有車」", async () => {
+    const fetcher: JsonFetcher = async () => [rawTruck({ time: "28-09-2026 18:00" }), rawTruck({ time: "28-09-2026 18:01" })];
+    await expect(newTaipeiProvider.fetchTrucks(fetcher)).rejects.toBeInstanceOf(UpstreamError);
   });
 
   test("夜間收班 0 台車是合法狀態", async () => {

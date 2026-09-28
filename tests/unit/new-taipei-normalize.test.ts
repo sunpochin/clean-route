@@ -1,10 +1,11 @@
 // 檔案用途：驗證新北原始資料列 → domain 型別的轉換、備註過濾與壞資料丟棄。
 // 所在層：tests/unit；bun:test。
-// 主要關聯：src/providers/new-taipei/normalize.ts、tests/fixtures/new-taipei.ts。
+// 主要關聯：src/providers/new-taipei/normalize.ts、src/providers/new-taipei/test-fixtures.ts。
 
 import { describe, expect, test } from "bun:test";
 import { normalizeStop, normalizeTruck } from "@/providers/new-taipei/normalize";
-import { BANQIAO_STATION, rawStop, rawTruck } from "../fixtures/new-taipei";
+import { rawStop, rawTruck } from "@/providers/new-taipei/test-fixtures";
+import { BANQIAO_STATION } from "../fixtures/landmarks";
 
 describe("normalizeStop", () => {
   test("轉出 domain 格式，服務日依星期排列（0 = 星期日）", () => {

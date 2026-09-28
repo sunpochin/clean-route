@@ -8,13 +8,20 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import type { Map as MapLibreMap, Marker } from "maplibre-gl";
 import { useEffect, useRef, useState } from "react";
 import type { GarbageTruck, LatLng } from "@/domain/types";
-import { isStale } from "@/domain/freshness";
+import { ageMs, isStale } from "@/domain/freshness";
+import { formatAge, formatClock } from "@/lib/format";
 import type { PlaceWithDistance } from "@/hooks/useNearbyStops";
 
 /** OpenFreeMap：免費、免 API key。換底圖只改這一行（DECISIONS D5）。 */
 const MAP_STYLE_URL = "https://tiles.openfreemap.org/styles/liberty";
 /** 由 scripts/copy-maplibre-worker.ts 複製到 public/；打包後 MapLibre 自己推算的 worker 路徑是錯的。 */
 const WORKER_URL = "/maplibre/maplibre-gl-worker.mjs";
+/**
+ * 樣式與第一批圖磚要多久內載入完成才算正常。
+ * 為什麼用逾時而不是看 error 事件：載入過程中單一圖磚、字型、sprite 失敗都會發 error，
+ * 那時 isStyleLoaded() 還是 false，用它判斷會把「之後其實載好了」的地圖永久蓋上失敗畫面。
+ */
+const MAP_LOAD_TIMEOUT_MS = 20_000;
 /** 初次框選範圍：使用者位置 + 最近幾個地點。全部框進來的話，手機上每個點會小到點不到。 */
 const FIT_NEAREST_STOPS = 8;
 
@@ -69,13 +76,16 @@ export function StopMap({ center, places, trucks, selectedPlaceId, onSelectPlace
           attributionControl: { compact: true },
         });
         map.addControl(new lib.NavigationControl({ showCompass: false }), "top-right");
-        map.on("load", () => !disposed && setReady(true));
-        map.on("error", (e) => {
-          // 單一圖磚失敗很常見也無害；只有樣式本身載不到才算地圖掛了。
-          if (!map.isStyleLoaded() && !disposed) setFailed(true);
-          console.warn("[StopMap]", e.error?.message);
+        const loadTimer = setTimeout(() => !disposed && setFailed(true), MAP_LOAD_TIMEOUT_MS);
+        map.on("load", () => {
+          clearTimeout(loadTimer);
+          if (!disposed) setFailed(false);
         });
+        map.on("error", (e) => console.warn("[StopMap]", e.error?.message));
         mapRef.current = map;
+        // 標記是 HTML 元素、不依賴樣式或圖磚，地圖物件建好就能畫；
+        // 若等 load（全部初始圖磚載完）才畫，慢網路下使用者會盯著空白地圖十幾秒。
+        setReady(true);
       })
       .catch(() => !disposed && setFailed(true));
     return () => {
@@ -133,12 +143,22 @@ export function StopMap({ center, places, trucks, selectedPlaceId, onSelectPlace
     truckMarkersRef.current.forEach((m) => m.remove());
     truckMarkersRef.current = trucks.map((truck) => {
       const stale = isStale(truck.recordedAt, now);
-      const el = markerElement(
-        `map-truck${stale ? " map-truck--stale" : ""}`,
-        `垃圾車 ${truck.id}${stale ? "（位置可能過期）" : ""}`,
-        "🚛",
-      );
-      return new lib.Marker({ element: el }).setLngLat([truck.location.lng, truck.location.lat]).addTo(map);
+      const age = ageMs(truck.recordedAt, now);
+      // 地圖上很多車沒有對應的卡片，所以回報時間必須在標記本身看得到（AGENTS.md § 3.4）：
+      // 點開 popup 顯示完整時間，過期的車直接在圖示旁標出多久前。
+      const when = age === null ? "回報時間不明" : `${formatAge(age)}回報（${formatClock(truck.recordedAt)}）`;
+      const detail = `垃圾車 ${truck.id}：${when}${stale ? "，位置可能過期" : ""}`;
+      const el = markerElement(`map-truck${stale ? " map-truck--stale" : ""}`, detail, "🚛");
+      if (stale) {
+        const badge = document.createElement("span");
+        badge.className = "map-truck__age";
+        badge.textContent = age === null ? "?" : formatAge(age);
+        el.append(badge);
+      }
+      return new lib.Marker({ element: el })
+        .setLngLat([truck.location.lng, truck.location.lat])
+        .setPopup(new lib.Popup({ offset: 18, closeButton: false }).setText(detail))
+        .addTo(map);
     });
   }, [ready, trucks, now]);
 

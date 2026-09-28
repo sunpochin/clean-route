@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { coarsenCoordinate, COARSEN_MAX_ERROR_M, distanceMeters, findWithinRadius, isInTaiwan } from "@/domain/geo";
-import { BANQIAO_STATION } from "../fixtures/new-taipei";
+import { BANQIAO_STATION } from "../fixtures/landmarks";
 
 const TAIPEI_MAIN_STATION = { lat: 25.0478, lng: 121.517 };
 

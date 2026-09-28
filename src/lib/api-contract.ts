@@ -17,6 +17,10 @@ export interface NearbyResponse {
   radiusM: number;
   /** 伺服器上這份清運點資料是何時從上游抓到的。 */
   dataLoadedAt: string;
+  /** 班表已過期且刷新失敗，這是舊版本；畫面必須明確警示並顯示日期。 */
+  dataStale: boolean;
+  /** 上游有幾筆清運點因格式不符被略過（全市合計）；> 0 時畫面要提示結果可能不完整。 */
+  skippedUpstreamRows: number;
 }
 
 export interface TrucksResponse {

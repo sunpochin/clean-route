@@ -37,6 +37,13 @@ describe("parseTaipeiLocalDateTime", () => {
     expect(parseTaipeiLocalDateTime("2026/09/28 17:42:20")).toBe("2026-09-28T09:42:20.000Z");
   });
 
+  test("不存在的日期時間不會被進位成合法時間", () => {
+    for (const bad of ["2026/02/31 12:00:00", "2026/13/01 12:00:00", "2026/09/28 24:30:00", "2026/09/28 12:60:00"]) {
+      expect(parseTaipeiLocalDateTime(bad)).toBeNull();
+    }
+    expect(parseTaipeiLocalDateTime("2028/02/29 12:00:00")).toBe("2028-02-29T04:00:00.000Z");
+  });
+
   test("格式不符回傳 null 而不是猜", () => {
     expect(parseTaipeiLocalDateTime("")).toBeNull();
     expect(parseTaipeiLocalDateTime("昨天下午")).toBeNull();

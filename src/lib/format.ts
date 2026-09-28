@@ -51,3 +51,15 @@ export function formatClock(iso: string): string {
     new Date(iso),
   );
 }
+
+/** 過期資料要讓人看出「是哪一天」的版本，只顯示時刻會讓昨天的資料看起來像今天的。 */
+export function formatDateTime(iso: string): string {
+  return new Intl.DateTimeFormat("zh-TW", {
+    timeZone: "Asia/Taipei",
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(iso));
+}

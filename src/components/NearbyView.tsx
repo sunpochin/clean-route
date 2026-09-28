@@ -13,7 +13,7 @@ import { useNearbyStops } from "@/hooks/useNearbyStops";
 import { useNow } from "@/hooks/useNow";
 import { useTrucks } from "@/hooks/useTrucks";
 import { NEARBY_DEFAULT_RADIUS_M } from "@/lib/api-contract";
-import { formatClock, formatDistance } from "@/lib/format";
+import { formatClock, formatDateTime, formatDistance } from "@/lib/format";
 import { LocationGate } from "./LocationGate";
 import { PlaceCard, type TruckNearStop } from "./PlaceCard";
 
@@ -33,8 +33,8 @@ export function NearbyView() {
     () => nearby.places?.flatMap((p) => p.place.stops.map((s) => s.routeId)) ?? [],
     [nearby.places],
   );
-  const trucksQuery = useTrucks(routeIds);
-  const trucks = useMemo(() => trucksQuery.data?.trucks ?? [], [trucksQuery.data]);
+  const trucksState = useTrucks(routeIds);
+  const trucks = trucksState.trucks;
   const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null);
 
   const truckByStop = useMemo(() => {
@@ -58,7 +58,8 @@ export function NearbyView() {
 
   const selectPlace = (id: string) => {
     setSelectedPlaceId(id);
-    document.getElementById(`place-${id}`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    document.getElementById(`place-${id}`)?.scrollIntoView({ block: "nearest", behavior: reduceMotion ? "auto" : "smooth" });
   };
 
   return (
@@ -95,7 +96,17 @@ export function NearbyView() {
           </button>
         </div>
 
-        {trucksQuery.isError && (
+        {nearby.data?.dataStale && (
+          <p role="alert" className="border-b border-warn bg-warn-soft px-4 py-2 text-sm">
+            班表資料更新失敗，目前顯示的是 {formatDateTime(nearby.data.dataLoadedAt)} 取得的版本，可能不是最新班表。
+          </p>
+        )}
+        {nearby.data && nearby.data.skippedUpstreamRows > 0 && (
+          <p role="alert" className="border-b border-warn bg-warn-soft px-4 py-2 text-sm">
+            上游有 {nearby.data.skippedUpstreamRows} 筆清運點資料格式異常而未顯示，附近的清運點可能不完整。
+          </p>
+        )}
+        {trucksState.isError && (
           <p role="alert" className="border-b border-warn bg-warn-soft px-4 py-2 text-sm">
             垃圾車即時位置暫時無法更新，下方顯示的是最後取得的位置。
           </p>
@@ -105,12 +116,12 @@ export function NearbyView() {
           <PlaceListBody
             nearby={nearby}
             truckByStop={truckByStop}
-            trucksAvailable={trucksQuery.data !== undefined}
+            availableRouteIds={trucksState.availableRouteIds}
             selectedPlaceId={selectedPlaceId}
             onSelect={selectPlace}
             now={now}
           />
-          <DataFootnote dataLoadedAt={nearby.data?.dataLoadedAt} trucksFetchedAt={trucksQuery.data?.fetchedAt} />
+          <DataFootnote dataLoadedAt={nearby.data?.dataLoadedAt} trucksFetchedAt={trucksState.fetchedAt} />
         </div>
       </section>
     </div>
@@ -120,14 +131,14 @@ export function NearbyView() {
 function PlaceListBody({
   nearby,
   truckByStop,
-  trucksAvailable,
+  availableRouteIds,
   selectedPlaceId,
   onSelect,
   now,
 }: {
   nearby: ReturnType<typeof useNearbyStops>;
   truckByStop: Map<string, TruckNearStop>;
-  trucksAvailable: boolean;
+  availableRouteIds: ReadonlySet<string>;
   selectedPlaceId: string | null;
   onSelect: (id: string) => void;
   now: Date;
@@ -166,7 +177,7 @@ function PlaceListBody({
           place={place}
           distanceM={distanceM}
           truckByStopId={truckByStop}
-          trucksAvailable={trucksAvailable}
+          availableRouteIds={availableRouteIds}
           selected={place.id === selectedPlaceId}
           onSelect={() => onSelect(place.id)}
           now={now}
@@ -180,7 +191,7 @@ function DataFootnote({ dataLoadedAt, trucksFetchedAt }: { dataLoadedAt?: string
   return (
     <p className="mt-4 text-xs leading-relaxed text-muted">
       資料來源：新北市政府資料開放平台。
-      {dataLoadedAt && `清運班表取得於 ${formatClock(dataLoadedAt)}；`}
+      {dataLoadedAt && `清運班表取得於 ${formatDateTime(dataLoadedAt)}；`}
       {trucksFetchedAt && `即時位置更新於 ${formatClock(trucksFetchedAt)}。`}
       表定時間為清潔隊公告時刻，實際到達可能提早或延後。
     </p>

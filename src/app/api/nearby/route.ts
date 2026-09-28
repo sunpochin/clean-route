@@ -44,10 +44,15 @@ export async function GET(request: Request) {
       stops: hits.map((hit) => hit.item),
       radiusM: radius,
       dataLoadedAt: snapshot.loadedAt.toISOString(),
+      dataStale: snapshot.stale,
+      skippedUpstreamRows: snapshot.skipped,
     };
     return Response.json(body, {
       // 降精度後相鄰使用者會打到同一個 URL，CDN 快取 10 分鐘能大幅減少冷啟動重抓。
-      headers: { "cache-control": "public, s-maxage=600, stale-while-revalidate=3600" },
+      // 過期資料只短暫快取：上游恢復後要盡快換掉，不能讓 CDN 把「舊班表」再多供應 10 分鐘。
+      headers: {
+        "cache-control": snapshot.stale ? "public, s-maxage=60" : "public, s-maxage=600, stale-while-revalidate=3600",
+      },
     });
   } catch (error) {
     // 只記錄上游來源與錯誤訊息，絕不記錄 lat/lng（AGENTS.md § 3.5）。

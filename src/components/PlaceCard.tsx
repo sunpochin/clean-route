@@ -21,14 +21,14 @@ interface Props {
   distanceM: number;
   /** 以清運點（路線）id 查車；地點內每條路線各自對應自己的車。 */
   truckByStopId: ReadonlyMap<string, TruckNearStop>;
-  /** 即時位置查詢是否成功；失敗時不能說「沒有車在線上」，只能說「無法取得」。 */
-  trucksAvailable: boolean;
+  /** 有成功查到即時位置的路線；不在其中的路線只能說「無法取得」，不能說「沒有車在線上」。 */
+  availableRouteIds: ReadonlySet<string>;
   selected: boolean;
   onSelect: () => void;
   now: Date;
 }
 
-export function PlaceCard({ index, place, distanceM, truckByStopId, trucksAvailable, selected, onSelect, now }: Props) {
+export function PlaceCard({ index, place, distanceM, truckByStopId, availableRouteIds, selected, onSelect, now }: Props) {
   const [next, ...others] = upcomingVisits(place, now);
   const countdown = next ? formatCountdown(next.pickup) : null;
 
@@ -70,7 +70,15 @@ export function PlaceCard({ index, place, distanceM, truckByStopId, trucksAvaila
                     </li>
                   ))}
                 </ul>
-                <TruckStatus truck={truckByStopId.get(next.stop.id) ?? null} trucksAvailable={trucksAvailable} now={now} />
+                {/* 只有今天這班才顯示即時車輛：同一路線的車若正在跑今天的行程，掛在「明天／下週」那班底下
+                    會讓人誤以為明天的車已經在路上（AGENTS.md § 3.4）。 */}
+                {next.pickup.dayOffset === 0 && (
+                  <TruckStatus
+                    truck={truckByStopId.get(next.stop.id) ?? null}
+                    trucksAvailable={availableRouteIds.has(next.stop.routeId)}
+                    now={now}
+                  />
+                )}
                 <p className="mt-2 text-sm text-muted">
                   {place.district}・{next.stop.routeName}・第 {next.stop.sequence} 站
                 </p>

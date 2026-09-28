@@ -46,13 +46,16 @@ src/providers/registry → src/providers/new-taipei（純 TypeScript，可搬進
 
 - `lat`／`lng`：必須在台灣範圍內；伺服器會再降精度到小數 3 位。
 - `radius`：100–2000 公尺，預設 600。伺服器實際以 `radius + 80 m`（降精度誤差）搜尋，最多 120 筆。
-- 200：`{ stops: GarbageStop[], radiusM, dataLoadedAt }`，`Cache-Control: public, s-maxage=600`。
+- 200：`{ stops: GarbageStop[], radiusM, dataLoadedAt, dataStale, skippedUpstreamRows }`，`Cache-Control: public, s-maxage=600`（`dataStale` 時只快取 60 秒）。
+  - `dataStale: true`：班表超過 12 小時且刷新失敗，回傳的是舊版本；畫面顯示警示條與資料日期。
+  - `skippedUpstreamRows > 0`：上游有資料列格式不符被略過；畫面提示結果可能不完整。
 - 400 `bad_request`；502 `upstream_unavailable`（上游失敗且沒有任何舊快取）。
 
 ### `GET /api/trucks?routes=a,b,c`
 
 - `routes`：1–40 個路線代碼。
-- 200：`{ trucks: GarbageTruck[], fetchedAt }`，`Cache-Control: public, s-maxage=15`。空陣列代表「這些路線目前沒有車回報位置」，是合法狀態。
+- 200：`{ trucks: GarbageTruck[], fetchedAt }`，`Cache-Control: public, s-maxage=15`。空陣列代表「這些路線目前沒有車回報位置」，是合法狀態；上游有資料但超過 20% 解析失敗時改回 502。
+- 前端路線超過 40 條時分批查詢；只有「該批成功」的路線才能顯示「沒有車回報」，其餘顯示「無法取得」。
 - 400 `bad_request`；502 `upstream_unavailable`。
 
 ## 地圖

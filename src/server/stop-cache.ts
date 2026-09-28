@@ -14,6 +14,14 @@ export interface StopSnapshot {
   loadedAt: Date;
 }
 
+export interface StopSnapshotResult extends StopSnapshot {
+  /**
+   * true 代表已超過 TTL 且最近一次刷新失敗，回傳的是舊版本。
+   * 必須一路傳到畫面上（AGENTS.md § 3.4）：沿用舊班表可以，但不能讓使用者以為這是最新資料。
+   */
+  stale: boolean;
+}
+
 interface CacheEntry {
   snapshot?: StopSnapshot;
   inflight?: Promise<StopSnapshot>;
@@ -26,12 +34,12 @@ async function load(city: CityId, fetcher: JsonFetcher): Promise<StopSnapshot> {
   return { stops, skipped, loadedAt: new Date() };
 }
 
-export async function getStopSnapshot(city: CityId, fetcher: JsonFetcher = nextFetcher): Promise<StopSnapshot> {
+export async function getStopSnapshot(city: CityId, fetcher: JsonFetcher = nextFetcher): Promise<StopSnapshotResult> {
   const entry = cache.get(city) ?? {};
   cache.set(city, entry);
 
   const fresh = entry.snapshot && Date.now() - entry.snapshot.loadedAt.getTime() < TTL_MS;
-  if (fresh) return entry.snapshot!;
+  if (fresh) return { ...entry.snapshot!, stale: false };
 
   // 冷啟動時多個請求同時進來，只能有一個真的去抓上游，其他人等同一個 Promise。
   entry.inflight ??= load(city, fetcher).finally(() => {
@@ -40,14 +48,14 @@ export async function getStopSnapshot(city: CityId, fetcher: JsonFetcher = nextF
 
   try {
     entry.snapshot = await entry.inflight;
-    return entry.snapshot;
+    return { ...entry.snapshot, stale: false };
   } catch (error) {
     // 刷新失敗但手上有舊資料時沿用舊資料：清運班表一年難得改幾次，12 小時前的版本仍然正確，
-    // 讓整個 App 因上游短暫維護而全掛反而更糟。回應裡的 loadedAt 會如實反映資料時間（AGENTS.md § 3.4）。
+    // 讓整個 App 因上游短暫維護而全掛反而更糟。但一定要標 stale，畫面會顯示「班表更新失敗＋資料日期」。
     // 沒有任何舊資料時才往上拋，讓 route handler 回 502。
     if (entry.snapshot) {
       console.error("[stop-cache] refresh failed, serving previous snapshot", city, error);
-      return entry.snapshot;
+      return { ...entry.snapshot, stale: true };
     }
     throw error;
   }

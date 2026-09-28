@@ -63,7 +63,18 @@ export function parseTaipeiLocalDateTime(value: string): string | null {
   const match = /^(\d{4})[/-](\d{1,2})[/-](\d{1,2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(value.trim());
   if (!match) return null;
   const [, y, mo, d, h, mi, s] = match;
-  const epoch = Date.UTC(+y, +mo - 1, +d, +h, +mi, s ? +s : 0) - TAIPEI_OFFSET_MS;
-  if (Number.isNaN(epoch)) return null;
-  return new Date(epoch).toISOString();
+  const parts = [+y, +mo - 1, +d, +h, +mi, s ? +s : 0] as const;
+  const wall = new Date(Date.UTC(...parts));
+  // Date.UTC 會把超出範圍的欄位「進位」而不是報錯（2/31 → 3/3、25:00 → 隔天 01:00）。
+  // 壞掉的時間戳若被進位成看似合理甚至未來的時間，過期判斷就會被騙，所以逐欄比對確認沒有進位。
+  const roundTrip = [
+    wall.getUTCFullYear(),
+    wall.getUTCMonth(),
+    wall.getUTCDate(),
+    wall.getUTCHours(),
+    wall.getUTCMinutes(),
+    wall.getUTCSeconds(),
+  ];
+  if (roundTrip.some((value, i) => value !== parts[i])) return null;
+  return new Date(wall.getTime() - TAIPEI_OFFSET_MS).toISOString();
 }
