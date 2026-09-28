@@ -1,0 +1,60 @@
+<!--
+檔案用途：Phase 1 的系統資料流、目錄職責與自家 API 說明。
+所在層：docs；AGENTS.md § 6 索引「系統資料流、目錄職責、API 端點」入口。
+主要關聯：docs/DECISIONS.md（為什麼這樣設計）、src/*（實作）。
+-->
+
+# 架構 / Architecture（Phase 1）
+
+## 資料流
+
+```text
+瀏覽器（Next.js client components）
+  │ 1. navigator.geolocation → 精確座標（只留在瀏覽器）
+  │ 2. 降精度到 ~100 m → GET /api/nearby?lat&lng&radius
+  │ 3. 用精確座標重算距離、篩半徑、依地點合併
+  │ 4. 每 30 秒 GET /api/trucks?routes=…
+  ▼
+Next.js route handlers（src/app/api）
+  │ 參數驗證、再降精度一次、組回應；絕不記錄座標
+  ▼
+src/server（Next 專屬接點）
+  │ stop-cache：程序內快取 12h、同時請求合併、刷新失敗沿用舊資料
+  │ next-fetcher：把 provider 的快取秒數轉成 Next data cache 的 next.revalidate
+  ▼
+src/providers/registry → src/providers/new-taipei（純 TypeScript，可搬進 Worker）
+  │ 分頁抓取、正規化、資料量／格式健全性檢查（fail loudly）
+  ▼
+新北市資料開放平台（清運點 27 頁 × 1000 筆；即時 GPS 1 頁）
+```
+
+## 目錄職責
+
+| 目錄 | 職責 | 不准做的事 |
+| --- | --- | --- |
+| `src/domain/` | 城市無關的型別與純函式：時間（Asia/Taipei）、距離、下一班、地點合併、資料新鮮度 | import `next/*`、React、任何 provider |
+| `src/providers/` | 各縣市原始 API → domain 型別 | import `next/*`、React；讓原始欄位流出本資料夾 |
+| `src/server/` | provider 與 Next.js 的接點（快取、fetcher） | 被 client component import |
+| `src/app/api/` | HTTP 介面：驗證、回應格式、錯誤碼 | 記錄使用者座標；直接 import provider 內部檔案 |
+| `src/hooks/` | 瀏覽器端資料狀態（定位、查詢、輪詢） | 把位置寫進 storage |
+| `src/components/` | 呈現；區分載入／失敗／查無結果 | 直接呼叫 fetch |
+| `src/lib/` | 前後端共用的 API 合約、格式化、fetch 包裝 | 放商業邏輯 |
+
+## 自家 API
+
+### `GET /api/nearby?lat=&lng=&radius=`
+
+- `lat`／`lng`：必須在台灣範圍內；伺服器會再降精度到小數 3 位。
+- `radius`：100–2000 公尺，預設 600。伺服器實際以 `radius + 80 m`（降精度誤差）搜尋，最多 120 筆。
+- 200：`{ stops: GarbageStop[], radiusM, dataLoadedAt }`，`Cache-Control: public, s-maxage=600`。
+- 400 `bad_request`；502 `upstream_unavailable`（上游失敗且沒有任何舊快取）。
+
+### `GET /api/trucks?routes=a,b,c`
+
+- `routes`：1–40 個路線代碼。
+- 200：`{ trucks: GarbageTruck[], fetchedAt }`，`Cache-Control: public, s-maxage=15`。空陣列代表「這些路線目前沒有車回報位置」，是合法狀態。
+- 400 `bad_request`；502 `upstream_unavailable`。
+
+## 地圖
+
+MapLibre GL JS v6 + OpenFreeMap。v6 的 Web Worker 需要由 `scripts/copy-maplibre-worker.ts` 複製到 `public/maplibre/`（`predev`／`prebuild` 自動執行），原因見 [`LESSONS.md`](LESSONS.md)。
