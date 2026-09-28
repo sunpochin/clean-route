@@ -1,0 +1,34 @@
+// 檔案用途：GET /api/trucks?routes=a,b,c —— 回傳指定路線目前在線上的垃圾車即時位置。
+// 所在層：src/app/api（Next.js route handler）；上游 GPS 由 Next data cache 快取 20 秒（docs/DECISIONS.md D4）。
+// 主要關聯：src/providers/registry.ts、src/lib/api-contract.ts、src/hooks/useTrucks.ts。
+
+import { TRUCKS_MAX_ROUTES, type ApiErrorBody, type TrucksResponse } from "@/lib/api-contract";
+import { getProvider, UpstreamError } from "@/providers/registry";
+import { nextFetcher } from "@/server/next-fetcher";
+
+const ROUTE_ID_PATTERN = /^[\w-]{1,32}$/;
+
+export async function GET(request: Request) {
+  const raw = new URL(request.url).searchParams.get("routes") ?? "";
+  const routeIds = [...new Set(raw.split(",").map((s) => s.trim()).filter(Boolean))];
+
+  if (routeIds.length === 0 || routeIds.length > TRUCKS_MAX_ROUTES || !routeIds.every((id) => ROUTE_ID_PATTERN.test(id))) {
+    return Response.json(
+      { error: "bad_request", message: `routes 需為 1–${TRUCKS_MAX_ROUTES} 個路線代碼，以逗號分隔` } satisfies ApiErrorBody,
+      { status: 400 },
+    );
+  }
+
+  try {
+    const wanted = new Set(routeIds);
+    const trucks = (await getProvider("new-taipei").fetchTrucks(nextFetcher)).filter((t) => wanted.has(t.routeId));
+    const body: TrucksResponse = { trucks, fetchedAt: new Date().toISOString() };
+    return Response.json(body, { headers: { "cache-control": "public, s-maxage=15" } });
+  } catch (error) {
+    console.error("[api/trucks] upstream failure", error instanceof UpstreamError ? error.source : "", error);
+    return Response.json(
+      { error: "upstream_unavailable", message: "垃圾車即時位置暫時無法取得" } satisfies ApiErrorBody,
+      { status: 502 },
+    );
+  }
+}

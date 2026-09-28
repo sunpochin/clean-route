@@ -1,0 +1,141 @@
+/*
+ * 檔案用途：全域樣式——色彩 token（含深色模式）、字型、按鈕與收運種類標籤等共用元件樣式、地圖標記樣式。
+ * 所在層：src/app；由 layout.tsx 載入。Tailwind v4 以 @theme 把 CSS 變數暴露成 utility（例如 bg-accent）。
+ * 主要關聯：src/components/*（使用這些 utility 與 class）、AGENTS.md § 1 鐵律 4（大字、高對比、不只靠顏色）。
+ */
+@import "tailwindcss";
+
+:root {
+  --background: #f6f7f4;
+  --foreground: #16201a;
+  --surface: #ffffff;
+  --surface-muted: #e9ece6;
+  --line: #d3d9d0;
+  --muted: #56615a;
+  /* 主色取垃圾車常見的綠；文字對比度皆 ≥ 4.5:1（WCAG AA）。 */
+  --accent: #1f7a4d;
+  --accent-strong: #16603b;
+  --accent-soft: #e3f3ea;
+  --on-accent: #ffffff;
+  --live: #16603b;
+  --warn: #8a4b00;
+  --warn-soft: #fff1d6;
+  --chip-garbage: #e4e4e0;
+  --chip-recycling: #dbe8ff;
+  --chip-foodScraps: #f7e3cf;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0f1411;
+    --foreground: #eef2ee;
+    --surface: #18201b;
+    --surface-muted: #222b25;
+    --line: #34403a;
+    --muted: #a6b3aa;
+    --accent: #3fb57a;
+    --accent-strong: #6fd39e;
+    --accent-soft: #1b3326;
+    --on-accent: #07140d;
+    --live: #6fd39e;
+    --warn: #ffc56b;
+    --warn-soft: #3a2a10;
+    --chip-garbage: #333833;
+    --chip-recycling: #22324d;
+    --chip-foodScraps: #45321f;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-line: var(--line);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-soft: var(--accent-soft);
+  --color-on-accent: var(--on-accent);
+  --color-live: var(--live);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --font-sans: system-ui, -apple-system, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+}
+
+html {
+  /* 戶外、單手、長輩也要看得清楚：基準字級比瀏覽器預設大一號。 */
+  font-size: 17px;
+  color-scheme: light dark;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+@layer components {
+  .btn-primary {
+    @apply min-h-12 rounded-xl bg-accent px-5 text-lg font-bold text-on-accent hover:bg-accent-strong focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-accent;
+  }
+  .btn-secondary {
+    @apply min-h-12 rounded-xl border-2 border-line bg-surface px-5 text-base font-medium hover:border-accent;
+  }
+  .btn-small {
+    @apply min-h-10 shrink-0 rounded-lg border-2 border-line bg-surface px-3 text-sm font-medium hover:border-accent;
+  }
+  .chip {
+    @apply rounded-md px-2 py-0.5 text-sm font-medium;
+  }
+  .chip--garbage {
+    background: var(--chip-garbage);
+  }
+  .chip--recycling {
+    background: var(--chip-recycling);
+  }
+  .chip--foodScraps {
+    background: var(--chip-foodScraps);
+  }
+}
+
+/* 地圖標記是 MapLibre 動態建立的 DOM，無法直接套 Tailwind class 組合，集中寫在這裡。 */
+.map-user {
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  background: #2563eb;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 6px rgb(37 99 235 / 0.25);
+}
+.map-stop {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 9999px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font: 700 14px/1 var(--font-sans);
+  border: 2px solid #fff;
+  cursor: pointer;
+}
+.map-stop--selected {
+  width: 36px;
+  height: 36px;
+  font-size: 16px;
+  background: var(--accent-strong);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+  z-index: 1;
+}
+.map-truck {
+  font-size: 26px;
+  line-height: 1;
+  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.5));
+}
+/* 過期位置：半透明＋灰階，並在 aria-label 註明，不只靠視覺（AGENTS.md § 3.4）。 */
+.map-truck--stale {
+  opacity: 0.45;
+  filter: grayscale(1);
+}
