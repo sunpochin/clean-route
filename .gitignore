@@ -141,3 +141,18 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# --- clean-route 專案補充（Next.js / Vercel / 本機） ---
+# 為什麼：GitHub Node 範本只忽略 `.env` 與 `.env.*.local`，這裡改成所有 .env* 都擋，
+# 只放行不含真實值的 .env.example，避免 VAPID 私鑰或 Supabase key 被誤提交。
+.env*
+!.env.example
+/.next/
+/out/
+.vercel
+*.tsbuildinfo
+next-env.d.ts
+.DS_Store
+*.pem
+# 由 scripts/copy-maplibre-worker.ts 於 predev／prebuild 產生，跟著已安裝的 maplibre-gl 版本走。
+/public/maplibre/

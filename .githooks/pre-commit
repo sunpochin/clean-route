@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# 檔案用途：git commit 前的品質與安全閘門——擋 .env、疑似 secret，並跑 typecheck 與 unit test。
+# 所在層：.githooks；`bun install` 時由 package.json 的 prepare script 設定 core.hooksPath 啟用。
+# 主要關聯：AGENTS.md § 3.1（受保護資源）與 § 4（Pre-commit gate）、.github/workflows/ci.yml（指令需一致）。
+#
+# 為什麼用 git 原生 hook 而不是 Claude Code hook：Claude、Codex、Gemini 與人類都會 commit，
+# 只有 git 本身的 hook 能一次涵蓋所有人；也不必把規則維護兩份。
+set -euo pipefail
+
+staged_files=$(git diff --cached --name-only --diff-filter=ACMR)
+
+# 1. .env 檔（.env.example 除外）
+if echo "$staged_files" | grep -qE '(^|/)\.env($|\.)' && echo "$staged_files" | grep -E '(^|/)\.env($|\.)' | grep -vqE '\.env\.example$'; then
+  echo "BLOCKED: staged .env file. Run: git restore --staged <file>" >&2
+  exit 1
+fi
+
+# 2. 疑似 secret：只看新增的行，避免既有內容或刪除行誤判。
+added=$(git diff --cached -U0 --diff-filter=ACMR | grep -E '^\+' | grep -vE '^\+\+\+' || true)
+if echo "$added" | grep -qE 'eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}'; then
+  echo "BLOCKED: staged diff contains what looks like a JWT / Supabase key." >&2
+  exit 1
+fi
+if echo "$added" | grep -qE 'AKIA[0-9A-Z]{16}'; then
+  echo "BLOCKED: staged diff contains what looks like an AWS access key." >&2
+  exit 1
+fi
+if echo "$added" | grep -qE -- '-----BEGIN ([A-Z]+ )?PRIVATE KEY-----'; then
+  echo "BLOCKED: staged diff contains a private key." >&2
+  exit 1
+fi
+if echo "$added" | grep -qiE '(service_role|vapid_private|secret)[a-z_]*["'\'' ]*[:=][ "'\'']*[A-Za-z0-9_+/=-]{24,}'; then
+  echo "BLOCKED: staged diff appears to assign a secret value. Use environment variables instead." >&2
+  exit 1
+fi
+
+# 3. 只改文件時跳過程式檢查：純 Markdown commit 不值得等 typecheck。
+if [ -z "$(echo "$staged_files" | grep -vE '\.md$' || true)" ]; then
+  exit 0
+fi
+
+# 4. typecheck + unit test（與 CI 相同指令）
+if ! bun run --silent typecheck; then
+  echo "BLOCKED: typecheck failed." >&2
+  exit 1
+fi
+if ! bun run --silent test; then
+  echo "BLOCKED: unit tests failed." >&2
+  exit 1
+fi
