@@ -1,9 +1,9 @@
-// 檔案用途：驗證畫面文案格式：距離、相對日期、倒數（特別是「已過表定」不能說成「快到了」）。
+// 檔案用途：驗證畫面文案格式：距離、相對日期、倒數（特別是「已過表定」不能說成「快到了」）、車開到第幾站。
 // 所在層：tests/unit；bun:test。
 // 主要關聯：src/lib/format.ts。
 
 import { describe, expect, test } from "bun:test";
-import { formatAge, formatCountdown, formatDayLabel, formatDistance, formatWeekdayList } from "@/lib/format";
+import { formatAge, formatCountdown, formatDayLabel, formatDistance, formatRouteProgress, formatWeekdayList } from "@/lib/format";
 
 describe("formatDistance", () => {
   test("一公里內以 10 公尺為單位，以上用公里", () => {
@@ -45,5 +45,28 @@ describe("formatWeekdayList", () => {
   test("依傳入順序列出，週日不會被數字 0 排到最前面", () => {
     expect(formatWeekdayList([3, 0])).toBe("週三、週日");
     expect(formatWeekdayList([])).toBe("");
+  });
+});
+
+describe("formatRouteProgress", () => {
+  const at = (sequence: number) => ({ status: "matched", sequence, distanceM: 20 }) as const;
+
+  test("車還沒到：說出車的站、這裡的站、還差約幾站", () => {
+    expect(formatRouteProgress(at(12), 18)).toBe("還差約 6 站（車在第 12 站附近，這裡是第 18 站）");
+  });
+
+  test("同一站與已超過：超過時只說「可能」已經過了", () => {
+    expect(formatRouteProgress(at(18), 18)).toBe("車就在這一站附近（第 18 站）");
+    expect(formatRouteProgress(at(20), 18)).toBe("車可能已經過了（車在第 20 站附近，這裡是第 18 站）");
+  });
+
+  test("判斷不出來的三種情況各有說法，且都不出現站數", () => {
+    const texts = [
+      formatRouteProgress(null, 18),
+      formatRouteProgress({ status: "ambiguous" }, 18),
+      formatRouteProgress({ status: "offRoute" }, 18),
+    ];
+    expect(new Set(texts).size).toBe(3);
+    for (const text of texts) expect(text).toContain("無法判斷");
   });
 });

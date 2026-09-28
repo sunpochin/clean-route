@@ -1,7 +1,8 @@
 // 檔案用途：清運點資料的程序內（in-process）記憶體快取，含 TTL、同時請求合併、過期時「先回舊資料、背景刷新」與刷新失敗的退避策略。
 // 所在層：src/server；Next data cache 之上的第二層快取，避免每個 /api/nearby 請求都重新組 27 頁、2.6 萬筆資料。
-// 主要關聯：src/app/api/nearby/route.ts（以 next/server 的 after() 讓背景刷新跑完）、src/providers/registry.ts、docs/DECISIONS.md D2／D4／D8。
+// 主要關聯：src/app/api/nearby/route.ts（以 next/server 的 after() 讓背景刷新跑完）、src/app/api/trucks/route.ts（只讀現有快照對站序）、src/providers/registry.ts、docs/DECISIONS.md D2／D4／D8／D9。
 
+import { groupStopsByRoute } from "@/domain/route-progress";
 import type { CityId, GarbageStop } from "@/domain/types";
 import { getProvider, type JsonFetcher } from "@/providers/registry";
 import { nextFetcher } from "./next-fetcher";
@@ -105,6 +106,28 @@ export async function getStopSnapshot(city: CityId, fetcher: JsonFetcher = nextF
     },
   );
   return { ...snapshot, stale, expired: true, backgroundRefresh };
+}
+
+/**
+ * 只看手上現有的快照（過期也照給），不觸發任何上游抓取。
+ * 給 /api/trucks 用：車輛位置每 30 秒輪詢，不能因為這台機器的班表還沒載入就讓使用者等 27 頁上游（冷啟動約 5 秒）；
+ * 過期的班表用來對站序也夠準（班表一年難得改幾次）。
+ */
+export function peekStopSnapshot(city: CityId): StopSnapshot | undefined {
+  return cache.get(city)?.snapshot;
+}
+
+// 以快照的 stops 陣列為鍵：快照換新時舊索引跟著被回收，不必另外管失效。
+const routeIndexCache = new WeakMap<readonly GarbageStop[], Map<string, GarbageStop[]>>();
+
+/** 快照的「路線 → 所有站」索引；2.6 萬筆只分組一次，之後每個請求直接查。 */
+export function stopsByRoute(snapshot: StopSnapshot): ReadonlyMap<string, readonly GarbageStop[]> {
+  let index = routeIndexCache.get(snapshot.stops);
+  if (!index) {
+    index = groupStopsByRoute(snapshot.stops);
+    routeIndexCache.set(snapshot.stops, index);
+  }
+  return index;
 }
 
 /** 測試專用：清空快取，避免測試之間互相污染。 */

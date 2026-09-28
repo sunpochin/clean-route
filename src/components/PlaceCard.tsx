@@ -66,6 +66,7 @@ export function PlaceCard({ index, place, distanceM, truckByStopId, availableRou
                   <TruckStatus
                     truck={truckByStopId.get(next.stop.id) ?? null}
                     trucksAvailable={availableRouteIds.has(next.stop.routeId)}
+                    stopSequence={next.stop.sequence}
                     now={now}
                   />
                 )}

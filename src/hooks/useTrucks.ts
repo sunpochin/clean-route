@@ -6,15 +6,14 @@
 
 import { useQueries, type UseQueryResult } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
-import type { GarbageTruck } from "@/domain/types";
-import { TRUCKS_MAX_ROUTES, type TrucksResponse } from "@/lib/api-contract";
+import { TRUCKS_MAX_ROUTES, type TrackedTruck, type TrucksResponse } from "@/lib/api-contract";
 import { fetchJson } from "@/lib/fetch-json";
 
 /** 上游 GPS 本身約每分鐘更新、伺服器又快取 20 秒，輪詢再快也拿不到更新的位置，只會浪費手機電量與流量。 */
 const POLL_MS = 30_000;
 
 export interface TrucksState {
-  trucks: GarbageTruck[];
+  trucks: TrackedTruck[];
   /**
    * 「有成功查到」的路線集合。不在集合內的路線（該批查詢失敗或尚未回來）只能說「無法取得」，
    * 不能說「車沒有回報位置」——後者是查過之後的結論（AGENTS.md § 3.4）。
@@ -40,7 +39,7 @@ export function useTrucks(routeIds: readonly string[]): TrucksState {
   const combine = useCallback(
     (results: UseQueryResult<TrucksResponse>[]): TrucksState => {
       const availableRouteIds = new Set<string>();
-      const trucks: GarbageTruck[] = [];
+      const trucks: TrackedTruck[] = [];
       let fetchedAt: string | undefined;
       results.forEach((result, i) => {
         if (!result.data) return;

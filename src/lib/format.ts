@@ -1,7 +1,8 @@
 // 檔案用途：畫面文案的格式化工具（距離、收運種類、下一班的相對日期、資料新舊）。
 // 所在層：src/lib；純函式，瀏覽器端元件共用，讓同一種資訊在每張卡片上說法一致。
-// 主要關聯：src/components/PlaceCard.tsx、src/components/PlaceDetail.tsx、src/components/NearbyView.tsx、tests/unit/format.test.ts。
+// 主要關聯：src/components/PlaceCard.tsx、src/components/PlaceDetail.tsx、src/components/NearbyView.tsx、src/components/TruckStatus.tsx、tests/unit/format.test.ts。
 
+import { stopsUntil, type RouteProgress } from "@/domain/route-progress";
 import type { NextPickup } from "@/domain/schedule";
 import type { ServiceType, Weekday } from "@/domain/types";
 
@@ -43,6 +44,23 @@ export function formatCountdown(pickup: Pick<NextPickup, "dayOffset" | "minutesU
   if (m === 0) return "表定就是現在";
   if (m <= 180) return m < 60 ? `${m} 分鐘後` : `${Math.floor(m / 60)} 小時 ${m % 60} 分鐘後`;
   return null;
+}
+
+/**
+ * 「車開到第幾站、離這一站還差幾站」。結論（還差幾站／可能已經過了）放最前面：手機上這行會折成兩行，
+ * 站在門口瞄一眼的人要先看到答案，站序只是佐證。
+ * 站序是用 GPS 比對推估的（約 ±1 站），所以一律說「附近」「約」，
+ * 也不換算成分鐘：還沒有可靠的估算模型前，不能把站數說成預計到達時間（AGENTS.md § 3.4）。
+ * 車的站序已超過這一站時只說「可能已經過了」：比對有誤差，車也可能漏收後折返。
+ */
+export function formatRouteProgress(progress: RouteProgress | null, stopSequence: number): string {
+  if (!progress) return "暫時無法判斷車開到第幾站";
+  if (progress.status === "ambiguous") return "路線會繞回這一帶，無法判斷車開到第幾站";
+  if (progress.status === "offRoute") return "車目前不在路線的站點附近，無法判斷開到第幾站";
+  const remaining = stopsUntil(progress, stopSequence);
+  if (remaining > 0) return `還差約 ${remaining} 站（車在第 ${progress.sequence} 站附近，這裡是第 ${stopSequence} 站）`;
+  if (remaining === 0) return `車就在這一站附近（第 ${stopSequence} 站）`;
+  return `車可能已經過了（車在第 ${progress.sequence} 站附近，這裡是第 ${stopSequence} 站）`;
 }
 
 export function formatAge(ms: number): string {

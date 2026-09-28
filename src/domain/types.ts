@@ -24,7 +24,7 @@ export interface GarbageStop {
   name: string;
   routeId: string;
   routeName: string;
-  /** 路線上的站序（1 起算）。Phase 2 會用來估算「車還有幾站到」。 */
+  /** 路線上的站序（1 起算）。src/domain/route-progress.ts 用它推算「車還差幾站到」。 */
   sequence: number;
   location: LatLng;
   /**

@@ -7,12 +7,12 @@
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useRef } from "react";
 import { distanceMeters } from "@/domain/geo";
-import type { GarbageTruck } from "@/domain/types";
 import { DEMO_LABEL, useGeolocation } from "@/hooks/useGeolocation";
 import { useNearbyStops } from "@/hooks/useNearbyStops";
 import { useNow } from "@/hooks/useNow";
 import { useSelectedPlace } from "@/hooks/useSelectedPlace";
 import { useTrucks } from "@/hooks/useTrucks";
+import type { TrackedTruck } from "@/lib/api-contract";
 import { formatClock, formatDateTime, formatDistance } from "@/lib/format";
 import { LocationGate } from "./LocationGate";
 import { MapStatusBanner } from "./MapStatusBanner";
@@ -44,7 +44,7 @@ export function NearbyView() {
   const listScrollRef = useRef<HTMLDivElement>(null);
 
   const truckByStop = useMemo(() => {
-    const byRoute = new Map<string, GarbageTruck[]>();
+    const byRoute = new Map<string, TrackedTruck[]>();
     for (const truck of trucks) byRoute.set(truck.routeId, [...(byRoute.get(truck.routeId) ?? []), truck]);
     const result = new Map<string, TruckNearStop>();
     for (const stop of nearby.places?.flatMap((p) => p.place.stops) ?? []) {
