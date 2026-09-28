@@ -26,6 +26,12 @@ export interface StopSnapshotResult extends StopSnapshot {
    */
   stale: boolean;
   /**
+   * true 代表已超過 TTL、回傳的是舊快照，而刷新結果「尚未確定或已失敗」（stale 為 true 時必定也是 true）。
+   * 呼叫端據此縮短 CDN 快取：剛過期時 stale 還是 false，若把這份回應長時間快取，
+   * 背景刷新隨後失敗的狀態就傳不到使用者手上（PR #5 review，見 docs/LESSONS.md L7）。
+   */
+  expired: boolean;
+  /**
    * 本次請求啟動的背景刷新；呼叫端必須交給 next/server 的 after()。
    * 為什麼不在這裡直接 fire-and-forget：serverless 平台在回應送出後可能凍結程序，沒註冊的 Promise 會跑不完，
    * 快取就永遠停在舊版。這個 Promise 保證不會 reject（錯誤已在內部記錄並轉成退避狀態）。
@@ -78,10 +84,10 @@ export async function getStopSnapshot(city: CityId, fetcher: JsonFetcher = nextF
   // 冷啟動：手上沒有任何資料，只能讓使用者等這一輪抓完；失敗就往上拋，讓 route handler 回 502。
   if (!snapshot) {
     const loaded = await startLoad(city, entry, fetcher);
-    return { ...loaded, stale: false };
+    return { ...loaded, stale: false, expired: false };
   }
 
-  if (Date.now() - snapshot.loadedAt.getTime() < TTL_MS) return { ...snapshot, stale: false };
+  if (Date.now() - snapshot.loadedAt.getTime() < TTL_MS) return { ...snapshot, stale: false, expired: false };
 
   // 已過期但有舊資料：立刻回舊資料，不讓使用者等上游好幾秒。清運班表一年難得改幾次，
   // 過期幾分鐘的版本幾乎一定仍正確；真正要讓使用者知道的是「刷新失敗了」，那才標 stale。
@@ -89,7 +95,7 @@ export async function getStopSnapshot(city: CityId, fetcher: JsonFetcher = nextF
   const stale = entry.lastFailureAt !== undefined;
 
   // 已經有人在刷新（它會自己註冊 after），或剛失敗還在退避期：只回舊資料，不再發動。
-  if (entry.inflight || failedRecently) return { ...snapshot, stale };
+  if (entry.inflight || failedRecently) return { ...snapshot, stale, expired: true };
 
   const backgroundRefresh = startLoad(city, entry, fetcher).then(
     () => undefined,
@@ -98,7 +104,7 @@ export async function getStopSnapshot(city: CityId, fetcher: JsonFetcher = nextF
       console.error("[stop-cache] background refresh failed, serving previous snapshot", city, error);
     },
   );
-  return { ...snapshot, stale, backgroundRefresh };
+  return { ...snapshot, stale, expired: true, backgroundRefresh };
 }
 
 /** 測試專用：清空快取，避免測試之間互相污染。 */

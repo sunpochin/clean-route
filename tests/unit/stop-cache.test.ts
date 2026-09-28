@@ -69,6 +69,7 @@ describe("getStopSnapshot", () => {
     setSystemTime(new Date("2026-09-28T00:00:00Z"));
     const first = await getStopSnapshot("new-taipei", upstream.fetcher);
     expect(first.backgroundRefresh).toBeUndefined();
+    expect(first.expired).toBe(false);
 
     setSystemTime(new Date("2026-09-28T13:00:00Z"));
     const callsBefore = upstream.pageCalls;
@@ -76,11 +77,14 @@ describe("getStopSnapshot", () => {
     // 回來的是舊快照本身：證明沒有等上游。刷新還沒失敗過，所以不是 stale。
     expect(expired.stops).toBe(first.stops);
     expect(expired.stale).toBe(false);
+    // 刷新結果未定：route 靠這個旗標縮短 CDN 快取，否則之後的失敗狀態傳不出去。
+    expect(expired.expired).toBe(true);
     expect(expired.backgroundRefresh).toBeInstanceOf(Promise);
 
     // 刷新進行中再來的請求不能再發動一輪。
     const concurrent = await getStopSnapshot("new-taipei", upstream.fetcher);
     expect(concurrent.backgroundRefresh).toBeUndefined();
+    expect(concurrent.expired).toBe(true);
 
     await expired.backgroundRefresh;
     expect(upstream.pageCalls).toBe(callsBefore * 2);
@@ -88,6 +92,7 @@ describe("getStopSnapshot", () => {
     expect(refreshed.stops).not.toBe(first.stops);
     expect(refreshed.loadedAt.toISOString()).toBe("2026-09-28T13:00:00.000Z");
     expect(refreshed.stale).toBe(false);
+    expect(refreshed.expired).toBe(false);
   });
 
   test("背景刷新失敗：Promise 不 reject；之後沿用舊資料並標 stale，loadedAt 維持舊時間", async () => {
@@ -103,6 +108,7 @@ describe("getStopSnapshot", () => {
     const after = await getStopSnapshot("new-taipei", upstream.fetcher);
     expect(after.stops).toBe(first.stops);
     expect(after.stale).toBe(true);
+    expect(after.expired).toBe(true);
     expect(after.loadedAt.toISOString()).toBe("2026-09-28T00:00:00.000Z");
   });
 
@@ -128,6 +134,7 @@ describe("getStopSnapshot", () => {
     await retry.backgroundRefresh;
     const recovered = await getStopSnapshot("new-taipei", upstream.fetcher);
     expect(recovered.stale).toBe(false);
+    expect(recovered.expired).toBe(false);
     expect(recovered.loadedAt.toISOString()).toBe("2026-09-29T00:06:00.000Z");
   });
 

@@ -53,9 +53,11 @@ export async function GET(request: Request) {
     };
     return Response.json(body, {
       // 降精度後相鄰使用者會打到同一個 URL，CDN 快取 10 分鐘能大幅減少冷啟動重抓。
-      // 過期資料只短暫快取：上游恢復後要盡快換掉，不能讓 CDN 把「舊班表」再多供應 10 分鐘。
+      // 班表已過期（刷新中或刷新失敗）時只短暫快取：刷新中的回應 dataStale 還是 false，
+      // 若 CDN 存上 10 分鐘＋1 小時，背景刷新隨後失敗時「班表更新失敗」的警示就到不了使用者（LESSONS L7）；
+      // 刷新失敗時則要讓上游恢復後的新班表盡快換上。
       headers: {
-        "cache-control": snapshot.stale ? "public, s-maxage=60" : "public, s-maxage=600, stale-while-revalidate=3600",
+        "cache-control": snapshot.expired ? "public, s-maxage=60" : "public, s-maxage=600, stale-while-revalidate=3600",
       },
     });
   } catch (error) {

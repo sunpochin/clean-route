@@ -46,7 +46,7 @@ src/providers/registry → src/providers/new-taipei（純 TypeScript，可搬進
 
 - `lat`／`lng`：必須在台灣範圍內；伺服器會再降精度到小數 3 位。
 - `radius`：100–2000 公尺，預設 600。伺服器實際以 `radius + 80 m`（降精度誤差）搜尋，最多 120 筆。
-- 200：`{ stops: GarbageStop[], radiusM, dataLoadedAt, dataStale, skippedUpstreamRows }`，`Cache-Control: public, s-maxage=600`（`dataStale` 時只快取 60 秒）。
+- 200：`{ stops: GarbageStop[], radiusM, dataLoadedAt, dataStale, skippedUpstreamRows }`，`Cache-Control: public, s-maxage=600`；班表已過期（背景刷新中或刷新失敗）時只快取 60 秒，避免 CDN 擋住隨後的 `dataStale`。
   - `dataStale: true`：班表超過 12 小時且最近一次背景刷新失敗，回傳的是舊版本；畫面顯示警示條與資料日期。過期但刷新尚未失敗時（剛觸發背景刷新）仍是 `false`。
   - `skippedUpstreamRows > 0`：上游有資料列格式不符被略過；畫面提示結果可能不完整。
 - 400 `bad_request`；502 `upstream_unavailable`（上游失敗且沒有任何舊快取）。
