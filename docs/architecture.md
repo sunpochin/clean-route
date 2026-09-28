@@ -19,7 +19,7 @@ Next.js route handlers（src/app/api）
   │ 參數驗證、再降精度一次、組回應；絕不記錄座標
   ▼
 src/server（Next 專屬接點）
-  │ stop-cache：程序內快取 12h、同時請求合併、刷新失敗沿用舊資料
+  │ stop-cache：程序內快取 12h、同時請求合併；過期先回舊資料並以 after() 背景刷新，失敗退避 5 分鐘
   │ next-fetcher：把 provider 的快取秒數轉成 Next data cache 的 next.revalidate
   ▼
 src/providers/registry → src/providers/new-taipei（純 TypeScript，可搬進 Worker）
@@ -47,7 +47,7 @@ src/providers/registry → src/providers/new-taipei（純 TypeScript，可搬進
 - `lat`／`lng`：必須在台灣範圍內；伺服器會再降精度到小數 3 位。
 - `radius`：100–2000 公尺，預設 600。伺服器實際以 `radius + 80 m`（降精度誤差）搜尋，最多 120 筆。
 - 200：`{ stops: GarbageStop[], radiusM, dataLoadedAt, dataStale, skippedUpstreamRows }`，`Cache-Control: public, s-maxage=600`（`dataStale` 時只快取 60 秒）。
-  - `dataStale: true`：班表超過 12 小時且刷新失敗，回傳的是舊版本；畫面顯示警示條與資料日期。
+  - `dataStale: true`：班表超過 12 小時且最近一次背景刷新失敗，回傳的是舊版本；畫面顯示警示條與資料日期。過期但刷新尚未失敗時（剛觸發背景刷新）仍是 `false`。
   - `skippedUpstreamRows > 0`：上游有資料列格式不符被略過；畫面提示結果可能不完整。
 - 400 `bad_request`；502 `upstream_unavailable`（上游失敗且沒有任何舊快取）。
 

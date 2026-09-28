@@ -1,6 +1,6 @@
 // 檔案用途：GET /api/nearby?lat=&lng=&radius= —— 回傳查詢點附近的清運點候選清單。
 // 所在層：src/app/api（Next.js route handler）；只做參數驗證、降精度與回應格式，資料來自 src/server/stop-cache.ts。
-// 主要關聯：src/lib/api-contract.ts、src/domain/geo.ts；隱私規則見 AGENTS.md § 3.5（本檔禁止記錄查詢座標）。
+// 主要關聯：src/lib/api-contract.ts、src/domain/geo.ts、src/server/stop-cache.ts（背景刷新交給 after()）；隱私規則見 AGENTS.md § 3.5（本檔禁止記錄查詢座標）。
 
 import { coarsenCoordinate, COARSEN_MAX_ERROR_M, findWithinRadius, isInTaiwan } from "@/domain/geo";
 import {
@@ -11,6 +11,7 @@ import {
   type ApiErrorBody,
   type NearbyResponse,
 } from "@/lib/api-contract";
+import { after } from "next/server";
 import { UpstreamError } from "@/providers/registry";
 import { getStopSnapshot } from "@/server/stop-cache";
 
@@ -39,6 +40,9 @@ export async function GET(request: Request) {
   try {
     // Phase 1 只有新北；多城市時改成依座標挑 provider（docs/PLAN.md Phase 3）。
     const snapshot = await getStopSnapshot("new-taipei");
+    // 班表過期時快取會先回舊資料、在背景重抓；交給 after() 才能確保 serverless 在回應送出後不會把重抓凍結在半路。
+    const { backgroundRefresh } = snapshot;
+    if (backgroundRefresh) after(() => backgroundRefresh);
     const hits = findWithinRadius(snapshot.stops, center, radius + COARSEN_MAX_ERROR_M, NEARBY_MAX_RESULTS);
     const body: NearbyResponse = {
       stops: hits.map((hit) => hit.item),

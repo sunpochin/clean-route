@@ -1,4 +1,4 @@
-// 檔案用途：驗證清運點記憶體快取：同時請求只抓一次、刷新失敗時沿用舊資料並標示 stale、完全沒資料時才報錯。
+// 檔案用途：驗證清運點記憶體快取：同時請求只抓一次、過期時先回舊資料並背景刷新、刷新失敗標示 stale 並退避、完全沒資料時才報錯。
 // 所在層：tests/unit；bun:test，注入假 fetcher。
 // 主要關聯：src/server/stop-cache.ts。
 
@@ -12,8 +12,12 @@ const TOTAL = 10_500;
 function countingFetcher() {
   let pageCalls = 0;
   let failing = false;
+  let failedCalls = 0;
   const fetcher: JsonFetcher = async (url) => {
-    if (failing) throw new Error("upstream down");
+    if (failing) {
+      failedCalls++;
+      throw new Error("upstream down");
+    }
     pageCalls++;
     const page = Number(new URL(url).searchParams.get("page"));
     const from = page * 1000;
@@ -25,8 +29,14 @@ function countingFetcher() {
     get pageCalls() {
       return pageCalls;
     },
+    get failedCalls() {
+      return failedCalls;
+    },
     fail() {
       failing = true;
+    },
+    recover() {
+      failing = false;
     },
   };
 }
@@ -54,16 +64,71 @@ describe("getStopSnapshot", () => {
     expect(upstream.pageCalls).toBe(calls);
   });
 
-  test("過期後刷新失敗：沿用舊資料、標示 stale，loadedAt 維持舊時間", async () => {
+  test("過期後：立刻回舊資料不等上游，背景刷新完成後換新版", async () => {
+    const upstream = countingFetcher();
+    setSystemTime(new Date("2026-09-28T00:00:00Z"));
+    const first = await getStopSnapshot("new-taipei", upstream.fetcher);
+    expect(first.backgroundRefresh).toBeUndefined();
+
+    setSystemTime(new Date("2026-09-28T13:00:00Z"));
+    const callsBefore = upstream.pageCalls;
+    const expired = await getStopSnapshot("new-taipei", upstream.fetcher);
+    // 回來的是舊快照本身：證明沒有等上游。刷新還沒失敗過，所以不是 stale。
+    expect(expired.stops).toBe(first.stops);
+    expect(expired.stale).toBe(false);
+    expect(expired.backgroundRefresh).toBeInstanceOf(Promise);
+
+    // 刷新進行中再來的請求不能再發動一輪。
+    const concurrent = await getStopSnapshot("new-taipei", upstream.fetcher);
+    expect(concurrent.backgroundRefresh).toBeUndefined();
+
+    await expired.backgroundRefresh;
+    expect(upstream.pageCalls).toBe(callsBefore * 2);
+    const refreshed = await getStopSnapshot("new-taipei", upstream.fetcher);
+    expect(refreshed.stops).not.toBe(first.stops);
+    expect(refreshed.loadedAt.toISOString()).toBe("2026-09-28T13:00:00.000Z");
+    expect(refreshed.stale).toBe(false);
+  });
+
+  test("背景刷新失敗：Promise 不 reject；之後沿用舊資料並標 stale，loadedAt 維持舊時間", async () => {
     const upstream = countingFetcher();
     setSystemTime(new Date("2026-09-28T00:00:00Z"));
     const first = await getStopSnapshot("new-taipei", upstream.fetcher);
     setSystemTime(new Date("2026-09-29T00:00:00Z"));
     upstream.fail();
-    const second = await getStopSnapshot("new-taipei", upstream.fetcher);
-    expect(second.stops).toBe(first.stops);
-    expect(second.stale).toBe(true);
-    expect(second.loadedAt.toISOString()).toBe("2026-09-28T00:00:00.000Z");
+    const expired = await getStopSnapshot("new-taipei", upstream.fetcher);
+    // 失敗要轉成 stale 狀態而非 unhandled rejection；若 reject，這行 await 會讓測試失敗。
+    await expired.backgroundRefresh;
+
+    const after = await getStopSnapshot("new-taipei", upstream.fetcher);
+    expect(after.stops).toBe(first.stops);
+    expect(after.stale).toBe(true);
+    expect(after.loadedAt.toISOString()).toBe("2026-09-28T00:00:00.000Z");
+  });
+
+  test("背景刷新失敗後退避 5 分鐘才重試；重試成功就解除 stale", async () => {
+    const upstream = countingFetcher();
+    setSystemTime(new Date("2026-09-28T00:00:00Z"));
+    await getStopSnapshot("new-taipei", upstream.fetcher);
+    setSystemTime(new Date("2026-09-29T00:00:00Z"));
+    upstream.fail();
+    await (await getStopSnapshot("new-taipei", upstream.fetcher)).backgroundRefresh;
+    const failedCalls = upstream.failedCalls;
+
+    setSystemTime(new Date("2026-09-29T00:04:00Z"));
+    const duringBackoff = await getStopSnapshot("new-taipei", upstream.fetcher);
+    expect(duringBackoff.backgroundRefresh).toBeUndefined();
+    expect(upstream.failedCalls).toBe(failedCalls);
+
+    setSystemTime(new Date("2026-09-29T00:06:00Z"));
+    upstream.recover();
+    const retry = await getStopSnapshot("new-taipei", upstream.fetcher);
+    // 重試這一刻仍是舊資料、仍標 stale：新資料還沒到手，不能提前宣稱已恢復。
+    expect(retry.stale).toBe(true);
+    await retry.backgroundRefresh;
+    const recovered = await getStopSnapshot("new-taipei", upstream.fetcher);
+    expect(recovered.stale).toBe(false);
+    expect(recovered.loadedAt.toISOString()).toBe("2026-09-29T00:06:00.000Z");
   });
 
   test("從來沒成功過：直接拋錯", async () => {
