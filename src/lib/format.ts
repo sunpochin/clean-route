@@ -1,6 +1,6 @@
 // 檔案用途：畫面文案的格式化工具（距離、收運種類、下一班的相對日期、資料新舊）。
 // 所在層：src/lib；純函式，瀏覽器端元件共用，讓同一種資訊在每張卡片上說法一致。
-// 主要關聯：src/components/StopCard.tsx、src/components/NearbyView.tsx、tests/unit/format.test.ts。
+// 主要關聯：src/components/PlaceCard.tsx、src/components/PlaceDetail.tsx、src/components/NearbyView.tsx、tests/unit/format.test.ts。
 
 import type { NextPickup } from "@/domain/schedule";
 import type { ServiceType, Weekday } from "@/domain/types";
@@ -12,6 +12,13 @@ export const SERVICE_LABEL: Record<ServiceType, string> = {
 };
 
 const WEEKDAY_LABEL: Record<Weekday, string> = { 0: "週日", 1: "週一", 2: "週二", 3: "週三", 4: "週四", 5: "週五", 6: "週六" };
+/** 週班表日期格內的單字標籤；格子只有約 40 px 寬，放不下「週一」兩個字加大字級。 */
+export const WEEKDAY_SHORT: Record<Weekday, string> = { 0: "日", 1: "一", 2: "二", 3: "三", 4: "四", 5: "五", 6: "六" };
+
+/** 「週一、週三、週五」；呼叫端負責排序（通常是 WEEK_ORDER）。 */
+export function formatWeekdayList(days: readonly Weekday[]): string {
+  return days.map((d) => WEEKDAY_LABEL[d]).join("、");
+}
 
 export function formatDistance(meters: number): string {
   if (meters < 1000) return `${Math.round(meters / 10) * 10} 公尺`;

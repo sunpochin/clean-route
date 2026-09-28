@@ -50,6 +50,8 @@ export function StopMap({ center, places, trucks, selectedPlaceId, onSelectPlace
   const libRef = useRef<typeof import("maplibre-gl") | null>(null);
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
+  // 底圖（樣式＋第一批圖磚）是否載完；未載完前地圖是一片空白，要讓人知道「還在載」而不是「沒東西」。
+  const [basemapLoaded, setBasemapLoaded] = useState(false);
   const userMarkerRef = useRef<Marker | null>(null);
   const stopMarkersRef = useRef<Marker[]>([]);
   const truckMarkersRef = useRef<Marker[]>([]);
@@ -79,7 +81,9 @@ export function StopMap({ center, places, trucks, selectedPlaceId, onSelectPlace
         const loadTimer = setTimeout(() => !disposed && setFailed(true), MAP_LOAD_TIMEOUT_MS);
         map.on("load", () => {
           clearTimeout(loadTimer);
-          if (!disposed) setFailed(false);
+          if (disposed) return;
+          setFailed(false);
+          setBasemapLoaded(true);
         });
         map.on("error", (e) => console.warn("[StopMap]", e.error?.message));
         mapRef.current = map;
@@ -173,6 +177,12 @@ export function StopMap({ center, places, trucks, selectedPlaceId, onSelectPlace
   return (
     <div className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full" />
+      {!basemapLoaded && !failed && (
+        // 放左下角：頂端是清運點查詢狀態條（MapStatusBanner），兩者同時出現時不互相遮擋。
+        <p aria-live="polite" className="absolute bottom-3 left-3 rounded-lg bg-surface/90 px-3 py-1.5 text-sm shadow">
+          底圖載入中…
+        </p>
+      )}
       {failed && (
         <p className="absolute inset-0 flex items-center justify-center bg-surface-muted p-4 text-center text-base">
           地圖暫時載入失敗，清運點列表仍可正常使用。
