@@ -45,6 +45,24 @@
 - 上游本身延遲約 1–2.5 分鐘（中位數 1.3 分鐘），所以過期門檻設 5 分鐘（`src/domain/freshness.ts`）。
 - 偶有同一 `lineid` 兩台車同時在線。
 
+## 收集 GPS 軌跡（站序比對的評估集）
+
+「車開到第幾站」的比對（`src/domain/route-progress.ts`、DECISIONS D9）目前的準確率只有模擬數據；模擬假設車剛好停在某站旁，沒有兩站之間的行駛、實際晚到、暫停與回場。要知道真實表現，先收軌跡：
+
+```bash
+bun run collect:traces              # 每 30 秒抓一次，Ctrl+C 停止
+bun run collect:traces --hours 8    # 跑滿 8 小時自動停；另有 --interval 秒數、--out 目錄
+```
+
+- 白天跑（約 06–22 時有車；凌晨上游常只剩 0～1 台），建議連收 2～3 天含平日與週末。
+- 輸出在 `data/traces/`（已 gitignore）：
+  - `stops-YYYY-MM-DD.json`：當天第一次執行時存的班表快照（正規化後的 `GarbageStop[]`），評估時要用「當時的班表」。
+  - `trucks-YYYY-MM-DD.jsonl`：一行一筆 `{ fetchedAt, id, routeId, recordedAt, lat, lng, district }`，依台北日期切檔；同一車牌同一 `recordedAt` 只寫一次。
+- 抓取失敗會印在 stderr 但不中斷；連續失敗 10 次會特別提醒，評估時要把那段時間當成缺口，不是「沒有車」。
+- 只存正規化後的欄位（AGENTS.md § 3.2），且不含任何使用者位置（§ 3.5）。
+
+有了軌跡之後的下一步：用車的前後位置推出它實際的站序當作近似答案，量出比對的回答率與錯誤率，再決定要不要做第二版（例如記住每台車先前的站序）。
+
 ## TLS 注意
 
 Python 3.13+ 預設嚴格驗證 X.509，會因「Missing Subject Key Identifier」拒絕這個網站的憑證鏈；Node／bun／curl 正常。寫探勘腳本請用 bun。
