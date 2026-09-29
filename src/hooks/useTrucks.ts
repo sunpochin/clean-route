@@ -22,6 +22,9 @@ export interface TrucksState {
   /** 至少一批查詢失敗；已有的舊資料仍保留，由畫面顯示警示條。 */
   isError: boolean;
   fetchedAt?: string;
+  /** 任一批回報站序比對用的班表已過期且刷新失敗；畫面要警示（AGENTS.md § 3.4）。 */
+  scheduleStale: boolean;
+  scheduleLoadedAt?: string;
 }
 
 export function useTrucks(routeIds: readonly string[]): TrucksState {
@@ -41,14 +44,19 @@ export function useTrucks(routeIds: readonly string[]): TrucksState {
       const availableRouteIds = new Set<string>();
       const trucks: TrackedTruck[] = [];
       let fetchedAt: string | undefined;
+      let scheduleStale = false;
+      let scheduleLoadedAt: string | undefined;
       results.forEach((result, i) => {
         if (!result.data) return;
         batches[i].forEach((id) => availableRouteIds.add(id));
         trucks.push(...result.data.trucks);
         // 多批時取最舊的時間，頁尾顯示的「更新於」才不會比實際資料新。
         if (!fetchedAt || result.data.fetchedAt < fetchedAt) fetchedAt = result.data.fetchedAt;
+        scheduleStale ||= result.data.scheduleStale;
+        const loadedAt = result.data.scheduleLoadedAt;
+        if (loadedAt && (!scheduleLoadedAt || loadedAt < scheduleLoadedAt)) scheduleLoadedAt = loadedAt;
       });
-      return { trucks, availableRouteIds, isError: results.some((r) => r.isError), fetchedAt };
+      return { trucks, availableRouteIds, isError: results.some((r) => r.isError), fetchedAt, scheduleStale, scheduleLoadedAt };
     },
     [batches],
   );

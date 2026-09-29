@@ -115,6 +115,11 @@ export interface StopSnapshotPeek {
    * 呼叫端要把「抓取失敗」與「還在載入」分開告訴使用者（AGENTS.md § 3.4，PR #6 review）。
    */
   loadFailed: boolean;
+  /**
+   * 有快照但已過期、且最近一次刷新失敗：拿它比對站序仍可行（班表一年難得改幾次），
+   * 但要讓畫面說「這是舊班表」，和 /api/nearby 的 dataStale 同一把尺（PR #6 review）。
+   */
+  refreshFailed: boolean;
 }
 
 /**
@@ -124,7 +129,10 @@ export interface StopSnapshotPeek {
  */
 export function peekStopSnapshot(city: CityId): StopSnapshotPeek {
   const entry = cache.get(city);
-  return { snapshot: entry?.snapshot, loadFailed: !entry?.snapshot && entry?.lastFailureAt !== undefined };
+  const { snapshot } = entry ?? {};
+  const failed = entry?.lastFailureAt !== undefined;
+  const expired = snapshot !== undefined && Date.now() - snapshot.loadedAt.getTime() >= TTL_MS;
+  return { snapshot, loadFailed: !snapshot && failed, refreshFailed: expired && failed };
 }
 
 /**

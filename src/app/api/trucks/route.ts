@@ -35,7 +35,7 @@ export async function GET(request: Request) {
 
     // 站序比對只用這台機器上現成的班表，不等上游：即時位置比「第幾站」重要，不能讓冷啟動的 27 頁抓取拖慢它。
     // 每次都在回應後確認班表可用（沒有就載入、過期就刷新；after 保證 serverless 不會中途凍結），下一輪 30 秒輪詢就會用上。
-    const { snapshot, loadFailed } = peekStopSnapshot("new-taipei");
+    const { snapshot, loadFailed, refreshFailed } = peekStopSnapshot("new-taipei");
     after(() => keepStopSnapshotWarm("new-taipei"));
     const index = snapshot ? stopsByRoute(snapshot) : null;
 
@@ -54,7 +54,12 @@ export async function GET(request: Request) {
       return { ...truck, progress };
     });
 
-    const body: TrucksResponse = { trucks: tracked, fetchedAt: new Date().toISOString() };
+    const body: TrucksResponse = {
+      trucks: tracked,
+      fetchedAt: new Date().toISOString(),
+      scheduleStale: refreshFailed,
+      scheduleLoadedAt: snapshot?.loadedAt.toISOString(),
+    };
     return Response.json(body, { headers: { "cache-control": "public, s-maxage=15" } });
   } catch (error) {
     console.error("[api/trucks] upstream failure", error instanceof UpstreamError ? error.source : "", error);

@@ -133,6 +133,13 @@ export function NearbyView() {
             班表資料更新失敗，目前顯示的是 {formatDateTime(nearby.data.dataLoadedAt)} 取得的版本，可能不是最新班表。
           </p>
         )}
+        {/* 附近清運點的班表警示已經說了「班表可能不是最新」，就不再疊第二條；只有站序比對那邊單獨過期時才另外提醒。 */}
+        {trucksState.scheduleStale && !nearby.data?.dataStale && (
+          <p role="alert" className="border-b border-warn bg-warn-soft px-4 py-2 text-sm">
+            伺服器上的班表更新失敗，「還差幾站」是以
+            {trucksState.scheduleLoadedAt && ` ${formatDateTime(trucksState.scheduleLoadedAt)} `}取得的舊班表推算。
+          </p>
+        )}
         {nearby.data && nearby.data.skippedUpstreamRows > 0 && (
           <p role="alert" className="border-b border-warn bg-warn-soft px-4 py-2 text-sm">
             上游有 {nearby.data.skippedUpstreamRows} 筆清運點資料格式異常而未顯示，附近的清運點可能不完整。

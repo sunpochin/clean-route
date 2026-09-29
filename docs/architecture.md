@@ -55,7 +55,7 @@ src/providers/registry → src/providers/new-taipei（純 TypeScript，可搬進
 ### `GET /api/trucks?routes=a,b,c`
 
 - `routes`：1–40 個路線代碼。
-- 200：`{ trucks: TrackedTruck[], fetchedAt }`，`Cache-Control: public, s-maxage=15`。
+- 200：`{ trucks: TrackedTruck[], fetchedAt, scheduleStale, scheduleLoadedAt? }`，`Cache-Control: public, s-maxage=15`。`scheduleStale: true` 代表站序比對用的班表已過期且刷新失敗（語意同 `/api/nearby` 的 `dataStale`），畫面要警示。
   - `TrackedTruck` = `GarbageTruck` + `progress`：`{ status: "matched", sequence, distanceM }`（車在第幾站附近）、`{ status: "ambiguous" }`（路線繞回、分不出是哪次經過）、`{ status: "offRoute" }`（附近沒有這條路線的站），或 `{ status: "unavailable", reason }`，`reason` 為 `scheduleLoading`（這台伺服器的班表還在背景載入）、`scheduleFailed`（班表抓取失敗）、`routeNotInSchedule`（班表沒有這條路線）。比對方式見 [`DECISIONS.md`](DECISIONS.md) D9。空陣列代表「這些路線目前沒有車回報位置」，是合法狀態；上游有資料但超過 20% 解析失敗時改回 502。
 - 前端路線超過 40 條時分批查詢；只有「該批成功」的路線才能顯示「沒有車回報」，其餘顯示「無法取得」。
 - 400 `bad_request`；502 `upstream_unavailable`。

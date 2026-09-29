@@ -41,6 +41,10 @@ export interface TrackedTruck extends GarbageTruck {
 export interface TrucksResponse {
   trucks: TrackedTruck[];
   fetchedAt: string;
+  /** 站序比對用的班表已過期且刷新失敗；畫面要警示「還差幾站」是用舊班表推算（同 NearbyResponse.dataStale）。 */
+  scheduleStale: boolean;
+  /** 比對用的班表是何時取得的；沒有班表時省略。 */
+  scheduleLoadedAt?: string;
 }
 
 export type ApiErrorCode = "bad_request" | "upstream_unavailable";
