@@ -19,9 +19,6 @@ import { getProvider, type JsonFetcher, UpstreamError } from "@/providers/regist
 const DEFAULT_INTERVAL_S = 30;
 /** 上游偶爾卡住不回；沒有 timeout 的話整個收集會停在那一次。 */
 const UPSTREAM_TIMEOUT_MS = 15_000;
-/** 去重用的鍵最多保留多久：同一台車同一個 recordedAt 只寫一次；超過這個時間的鍵一定不會再出現，清掉避免記憶體慢慢長。 */
-const DEDUPE_TTL_MS = 60 * 60 * 1000;
-
 /** 一行軌跡：抓取時間 + 車輛正規化資料（去掉 address：反查門牌對評估沒用，檔案卻大一半）。 */
 interface TraceRow {
   fetchedAt: string;
@@ -87,11 +84,11 @@ function logError(message: string, error: unknown) {
 }
 
 /**
- * 每天第一次執行時存一份清運點快照。評估要拿「當時的班表」對軌跡，班表雖然一年難得改幾次，
- * 但沒有這份快照，幾週後要重算就得相信「應該沒改」。
+ * 每個台北日期存一份清運點快照。評估要拿「當時的班表」對軌跡，班表雖然一年難得改幾次，
+ * 但沒有這份快照，幾週後要重算就得相信「應該沒改」。跨夜連跑時每換一天都要再存一份，軌跡檔才有配對的班表。
  */
-async function ensureStopsSnapshot(outDir: string, provider = getProvider("new-taipei")) {
-  const file = join(outDir, `stops-${taipeiDate(new Date())}.json`);
+async function ensureStopsSnapshot(outDir: string, date: string, provider = getProvider("new-taipei")) {
+  const file = join(outDir, `stops-${date}.json`);
   if (existsSync(file)) {
     log(`班表快照已存在：${file}`);
     return;
@@ -119,13 +116,17 @@ async function main() {
   mkdirSync(options.outDir, { recursive: true });
   const provider = getProvider("new-taipei");
 
-  // 班表快照抓不到就直接停：沒有班表，軌跡評估做不了，繼續收只是浪費時間（fail loudly）。
-  await ensureStopsSnapshot(options.outDir, provider);
+  // 一開始班表快照抓不到就直接停：沒有班表，軌跡評估做不了，繼續收只是浪費時間（fail loudly）。
+  let snapshotDate = taipeiDate(new Date());
+  await ensureStopsSnapshot(options.outDir, snapshotDate, provider);
 
   const startedAt = Date.now();
   const deadline = options.hours === undefined ? Infinity : startedAt + options.hours * 60 * 60 * 1000;
-  /** `${車牌}|${recordedAt}` → 第一次看到的時間，用來去重與清理。 */
-  const seen = new Map<string, number>();
+  /**
+   * 車牌 → 最近一次寫入的 recordedAt。上游每次都回「該車最新一筆」，所以 recordedAt 沒變就是同一筆定位，不重寫。
+   * 為什麼不用有期限的「看過的鍵」集合：上游偶爾會把同一筆過期定位掛好幾個小時，鍵一過期就會被重寫一次，評估集會多出假的重複點。
+   */
+  const lastRecordedAt = new Map<string, string>();
   const trucksSeen = new Set<string>();
   let ticks = 0;
   let rowsWritten = 0;
@@ -149,39 +150,53 @@ async function main() {
   while (!stopping && Date.now() < deadline) {
     const tickStarted = Date.now();
     ticks++;
+
+    // 只有「打上游」可以失敗後繼續：上游維護可能持續幾十分鐘，中斷收集會損失後面的資料。
+    // 寫檔失敗（磁碟滿、目錄被移走）不在這個 try 裡：那會讓 --hours 的無人收集「成功結束」卻少一大段資料，必須直接中止。
+    const fetchedAt = new Date().toISOString();
+    let trucks: GarbageTruck[] | null = null;
     try {
-      const fetchedAt = new Date().toISOString();
-      const trucks = await provider.fetchTrucks(plainFetcher);
+      trucks = await provider.fetchTrucks(plainFetcher);
       consecutiveFailures = 0;
+    } catch (error) {
+      failures++;
+      consecutiveFailures++;
+      logError(`第 ${ticks} 次抓取失敗（連續 ${consecutiveFailures} 次）`, error);
+      if (consecutiveFailures === 10) console.error("連續失敗 10 次：這段時間沒有軌跡，評估時要把它當成缺口而不是「沒有車」。");
+    }
+
+    if (trucks) {
+      // 跨過台北午夜：先補這一天的班表快照，軌跡檔才有配對的班表。抓不到就下一輪再試，軌跡照存（班表一年難得改，補得回來）。
+      const today = taipeiDate(new Date());
+      if (today !== snapshotDate) {
+        try {
+          await ensureStopsSnapshot(options.outDir, today, provider);
+          snapshotDate = today;
+        } catch (error) {
+          logError(`${today} 的班表快照抓取失敗，下一輪再試`, error);
+        }
+      }
 
       const fresh: TraceRow[] = [];
       for (const truck of trucks) {
-        const key = `${truck.id}|${truck.recordedAt}`;
-        if (seen.has(key)) continue;
-        seen.set(key, tickStarted);
+        if (lastRecordedAt.get(truck.id) === truck.recordedAt) continue;
+        lastRecordedAt.set(truck.id, truck.recordedAt);
         trucksSeen.add(truck.id);
         fresh.push(toRow(truck, fetchedAt));
       }
       if (fresh.length > 0) {
         // 依台北日期切檔：跨夜連跑時檔案不會無限長，之後也能按天挑「有車的時段」來評估。
-        const file = join(options.outDir, `trucks-${taipeiDate(new Date())}.jsonl`);
+        const file = join(options.outDir, `trucks-${today}.jsonl`);
         appendFileSync(file, fresh.map((row) => JSON.stringify(row)).join("\n") + "\n");
         rowsWritten += fresh.length;
       }
-      for (const [key, firstSeen] of seen) if (tickStarted - firstSeen > DEDUPE_TTL_MS) seen.delete(key);
-
       // 上游回 0 台是合法狀態（收班後），照實印出來，不當成錯誤，也不能假裝有資料。
       log(`線上 ${trucks.length} 台，新位置 ${fresh.length} 筆，累計 ${rowsWritten} 筆／${trucksSeen.size} 台`);
-    } catch (error) {
-      failures++;
-      consecutiveFailures++;
-      logError(`第 ${ticks} 次抓取失敗（連續 ${consecutiveFailures} 次）`, error);
-      // 上游維護可能持續幾十分鐘；不中斷收集，但連續失敗太久要把話講明，讓人知道這段時間是空的。
-      if (consecutiveFailures === 10) console.error("連續失敗 10 次：這段時間沒有軌跡，評估時要把它當成缺口而不是「沒有車」。");
     }
 
-    // 扣掉這次抓取花的時間，讓間隔穩定；Ctrl+C 期間每秒檢查一次，不用等整個間隔。
-    const waitUntil = tickStarted + options.intervalS * 1000;
+    // 扣掉這次抓取花的時間讓間隔穩定，但不能睡過 --hours 的期限（間隔沒有上限，睡過頭可能多跑將近一整個間隔）；
+    // Ctrl+C 期間每秒檢查一次，不用等整個間隔。
+    const waitUntil = Math.min(tickStarted + options.intervalS * 1000, deadline);
     while (!stopping && Date.now() < waitUntil) await Bun.sleep(Math.min(1000, waitUntil - Date.now()));
   }
   summary();

@@ -62,9 +62,9 @@ bun run collect:traces --hours 8    # 跑滿 8 小時自動停；另有 --interv
 
 - 白天跑（約 06–22 時有車；凌晨上游常只剩 0～1 台），建議連收 2～3 天含平日與週末。
 - 輸出在 `data/traces/`（已 gitignore）：
-  - `stops-YYYY-MM-DD.json`：當天第一次執行時存的班表快照（正規化後的 `GarbageStop[]`），評估時要用「當時的班表」。
+  - `stops-YYYY-MM-DD.json`：每個台北日期一份班表快照（跨夜連跑會自動補隔天的），格式 `{ loadedAt, skipped, stops: GarbageStop[] }`，評估時要用「當時的班表」。
   - `trucks-YYYY-MM-DD.jsonl`：一行一筆 `{ fetchedAt, id, routeId, recordedAt, lat, lng, district }`，依台北日期切檔；同一車牌同一 `recordedAt` 只寫一次。
-- 抓取失敗會印在 stderr 但不中斷；連續失敗 10 次會特別提醒，評估時要把那段時間當成缺口，不是「沒有車」。
+- 上游抓取失敗會印在 stderr 但不中斷；連續失敗 10 次會特別提醒，評估時要把那段時間當成缺口，不是「沒有車」。寫檔失敗（磁碟滿等）則直接中止並回傳非零結束碼，不會假裝成功。
 - 只存正規化後的欄位（AGENTS.md § 3.2），且不含任何使用者位置（§ 3.5）。
 
 有了軌跡之後的下一步：用車的前後位置推出它實際的站序當作近似答案，量出比對的回答率與錯誤率，再決定要不要做第二版（例如記住每台車先前的站序）。
