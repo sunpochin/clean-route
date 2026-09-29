@@ -196,7 +196,9 @@ function RouteWeekCard({
         </p>
       )}
       {/* 只有今天這班才顯示即時車輛，理由同 PlaceCard：別讓人以為明天的車已經在路上（AGENTS.md § 3.4）。 */}
-      {pickup?.dayOffset === 0 && <TruckStatus truck={truck} trucksAvailable={trucksAvailable} now={now} />}
+      {pickup?.dayOffset === 0 && (
+        <TruckStatus truck={truck} trucksAvailable={trucksAvailable} stopSequence={stop.sequence} now={now} />
+      )}
     </li>
   );
 }

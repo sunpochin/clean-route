@@ -2,6 +2,7 @@
 // 所在層：src/lib；只放型別與常數，瀏覽器與伺服器都可以安全 import。
 // 主要關聯：src/app/api/*/route.ts（產生回應）、src/hooks/*（消費回應）、docs/architecture.md（API 說明）。
 
+import type { RouteProgress } from "@/domain/route-progress";
 import type { GarbageStop, GarbageTruck } from "@/domain/types";
 
 export const NEARBY_DEFAULT_RADIUS_M = 600;
@@ -23,9 +24,27 @@ export interface NearbyResponse {
   skippedUpstreamRows: number;
 }
 
+/**
+ * 沒有比對站序的原因。三者分開是為了讓畫面說實話（AGENTS.md § 3.4）：
+ * 「班表還在載入」會自己好，「班表抓取失敗」是上游出問題，「班表裡沒有這條路線」是資料對不上——使用者該有的預期都不同。
+ */
+export type ProgressUnavailableReason = "scheduleLoading" | "scheduleFailed" | "routeNotInSchedule";
+
+/** 比對結果（matched／ambiguous／offRoute），或根本沒辦法比對（unavailable）。 */
+export type TruckProgress = RouteProgress | { status: "unavailable"; reason: ProgressUnavailableReason };
+
+export interface TrackedTruck extends GarbageTruck {
+  /** 車在路線上開到第幾站（伺服器以全路線班表比對，見 docs/DECISIONS.md D9）。 */
+  progress: TruckProgress;
+}
+
 export interface TrucksResponse {
-  trucks: GarbageTruck[];
+  trucks: TrackedTruck[];
   fetchedAt: string;
+  /** 站序比對用的班表已過期且刷新失敗；畫面要警示「還差幾站」是用舊班表推算（同 NearbyResponse.dataStale）。 */
+  scheduleStale: boolean;
+  /** 比對用的班表是何時取得的；沒有班表時省略。 */
+  scheduleLoadedAt?: string;
 }
 
 export type ApiErrorCode = "bad_request" | "upstream_unavailable";

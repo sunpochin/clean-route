@@ -1,7 +1,8 @@
 // 檔案用途：清運點資料的程序內（in-process）記憶體快取，含 TTL、同時請求合併、過期時「先回舊資料、背景刷新」與刷新失敗的退避策略。
 // 所在層：src/server；Next data cache 之上的第二層快取，避免每個 /api/nearby 請求都重新組 27 頁、2.6 萬筆資料。
-// 主要關聯：src/app/api/nearby/route.ts（以 next/server 的 after() 讓背景刷新跑完）、src/providers/registry.ts、docs/DECISIONS.md D2／D4／D8。
+// 主要關聯：src/app/api/nearby/route.ts（以 next/server 的 after() 讓背景刷新跑完）、src/app/api/trucks/route.ts（只讀現有快照對站序）、src/providers/registry.ts、docs/DECISIONS.md D2／D4／D8／D9。
 
+import { groupStopsByRoute } from "@/domain/route-progress";
 import type { CityId, GarbageStop } from "@/domain/types";
 import { getProvider, type JsonFetcher } from "@/providers/registry";
 import { nextFetcher } from "./next-fetcher";
@@ -105,6 +106,66 @@ export async function getStopSnapshot(city: CityId, fetcher: JsonFetcher = nextF
     },
   );
   return { ...snapshot, stale, expired: true, backgroundRefresh };
+}
+
+export interface StopSnapshotPeek {
+  snapshot?: StopSnapshot;
+  /**
+   * 手上沒有快照，且最近一次抓取失敗（成功後清除）。
+   * 呼叫端要把「抓取失敗」與「還在載入」分開告訴使用者（AGENTS.md § 3.4，PR #6 review）。
+   */
+  loadFailed: boolean;
+  /**
+   * 有快照但已過期、且最近一次刷新失敗：拿它比對站序仍可行（班表一年難得改幾次），
+   * 但要讓畫面說「這是舊班表」，和 /api/nearby 的 dataStale 同一把尺（PR #6 review）。
+   */
+  refreshFailed: boolean;
+}
+
+/**
+ * 只看手上現有的快照（過期也照給），不觸發任何上游抓取。
+ * 給 /api/trucks 用：車輛位置每 30 秒輪詢，不能因為這台機器的班表還沒載入就讓使用者等 27 頁上游（冷啟動約 5 秒）；
+ * 過期的班表用來對站序也夠準（班表一年難得改幾次）。載入與刷新交給 keepStopSnapshotWarm。
+ */
+export function peekStopSnapshot(city: CityId): StopSnapshotPeek {
+  const entry = cache.get(city);
+  const { snapshot } = entry ?? {};
+  const failed = entry?.lastFailureAt !== undefined;
+  const expired = snapshot !== undefined && Date.now() - snapshot.loadedAt.getTime() >= TTL_MS;
+  return { snapshot, loadFailed: !snapshot && failed, refreshFailed: expired && failed };
+}
+
+/**
+ * 讓快照保持可用：沒有就載入、過期就刷新、還新鮮就立刻結束。保證不會 reject，呼叫端交給 after() 即可。
+ * 為什麼 /api/trucks 每次都要呼叫：只 peek 不刷新的話，若 /api/nearby 都被 CDN 或別的機器接走，
+ * 這台機器的班表會一直停在第一次載入的版本（PR #6 review）。
+ * 冷啟動失敗後同樣退避：輪詢每 30 秒一次，不退避的話上游故障時每個輪詢都會再打一輪 27 頁。
+ */
+export async function keepStopSnapshotWarm(city: CityId, fetcher: JsonFetcher = nextFetcher): Promise<void> {
+  const entry = cache.get(city);
+  const coldFailedRecently =
+    !entry?.snapshot && entry?.lastFailureAt !== undefined && Date.now() - entry.lastFailureAt < REFRESH_RETRY_BACKOFF_MS;
+  if (coldFailedRecently) return;
+  try {
+    const result = await getStopSnapshot(city, fetcher);
+    await result.backgroundRefresh;
+  } catch (error) {
+    // 不吞掉（AGENTS.md § 3.4）：記錄下來，並透過 lastFailureAt 讓 peek 回報 loadFailed，畫面說「班表抓取失敗」。
+    console.error("[stop-cache] warm-up failed", city, error);
+  }
+}
+
+// 以快照的 stops 陣列為鍵：快照換新時舊索引跟著被回收，不必另外管失效。
+const routeIndexCache = new WeakMap<readonly GarbageStop[], Map<string, GarbageStop[]>>();
+
+/** 快照的「路線 → 所有站」索引；2.6 萬筆只分組一次，之後每個請求直接查。 */
+export function stopsByRoute(snapshot: StopSnapshot): ReadonlyMap<string, readonly GarbageStop[]> {
+  let index = routeIndexCache.get(snapshot.stops);
+  if (!index) {
+    index = groupStopsByRoute(snapshot.stops);
+    routeIndexCache.set(snapshot.stops, index);
+  }
+  return index;
 }
 
 /** 測試專用：清空快取，避免測試之間互相污染。 */

@@ -6,13 +6,13 @@
 
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useRef } from "react";
-import { distanceMeters } from "@/domain/geo";
-import type { GarbageTruck } from "@/domain/types";
+import { pickTruckForStop } from "@/domain/route-progress";
 import { DEMO_LABEL, useGeolocation } from "@/hooks/useGeolocation";
 import { useNearbyStops } from "@/hooks/useNearbyStops";
 import { useNow } from "@/hooks/useNow";
 import { useSelectedPlace } from "@/hooks/useSelectedPlace";
 import { useTrucks } from "@/hooks/useTrucks";
+import type { TrackedTruck } from "@/lib/api-contract";
 import { formatClock, formatDateTime, formatDistance } from "@/lib/format";
 import { LocationGate } from "./LocationGate";
 import { MapStatusBanner } from "./MapStatusBanner";
@@ -44,16 +44,13 @@ export function NearbyView() {
   const listScrollRef = useRef<HTMLDivElement>(null);
 
   const truckByStop = useMemo(() => {
-    const byRoute = new Map<string, GarbageTruck[]>();
+    const byRoute = new Map<string, TrackedTruck[]>();
     for (const truck of trucks) byRoute.set(truck.routeId, [...(byRoute.get(truck.routeId) ?? []), truck]);
     const result = new Map<string, TruckNearStop>();
     for (const stop of nearby.places?.flatMap((p) => p.place.stops) ?? []) {
-      // 同一路線偶爾會有兩台車（上游實測有重複 lineid），取離這個點最近的那台。
-      for (const truck of byRoute.get(stop.routeId) ?? []) {
-        const d = distanceMeters(stop.location, truck.location);
-        const current = result.get(stop.id);
-        if (!current || d < current.distanceM) result.set(stop.id, { truck, distanceM: d });
-      }
+      // 同一路線偶爾會有兩台車（上游實測有重複 lineid）；優先顯示還沒到這一站的那台，規則見 pickTruckForStop。
+      const picked = pickTruckForStop(stop, byRoute.get(stop.routeId) ?? []);
+      if (picked) result.set(stop.id, picked);
     }
     return result;
   }, [trucks, nearby.places]);
@@ -134,6 +131,13 @@ export function NearbyView() {
         {nearby.data?.dataStale && (
           <p role="alert" className="border-b border-warn bg-warn-soft px-4 py-2 text-sm">
             班表資料更新失敗，目前顯示的是 {formatDateTime(nearby.data.dataLoadedAt)} 取得的版本，可能不是最新班表。
+          </p>
+        )}
+        {/* 附近清運點的班表警示已經說了「班表可能不是最新」，就不再疊第二條；只有站序比對那邊單獨過期時才另外提醒。 */}
+        {trucksState.scheduleStale && !nearby.data?.dataStale && (
+          <p role="alert" className="border-b border-warn bg-warn-soft px-4 py-2 text-sm">
+            伺服器上的班表更新失敗，「還差幾站」是以
+            {trucksState.scheduleLoadedAt && ` ${formatDateTime(trucksState.scheduleLoadedAt)} `}取得的舊班表推算。
           </p>
         )}
         {nearby.data && nearby.data.skippedUpstreamRows > 0 && (
