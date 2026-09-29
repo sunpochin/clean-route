@@ -47,6 +47,7 @@ GPT 漏掉、但 Phase 1 必須處理的事：
 - [x] 新北 provider：清運點（分頁抓取＋快取）、即時 GPS
 - [x] `/api/nearby`、`/api/trucks` route handler
 - [x] 首頁：定位 → 附近清運點列表（下一班時間、收哪幾種、距離）→ 地圖顯示清運點與即時車輛
+- [x] 顯示「車在第幾站附近、離這一站還差約幾站」（GPS 對站序；路線繞回分不出時明說，見 D9）
 - [ ] 用真實 GPS 軌跡評估「還差幾站」的比對（收集腳本已完成：`bun run collect:traces`，見 docs/data-sources/new-taipei.md）
 - [ ] 手動選點（不授權定位、或想看別的地址時）
 - [ ] 收藏清運點（localStorage）
@@ -56,7 +57,7 @@ GPT 漏掉、但 Phase 1 必須處理的事：
 - Web App Manifest、Service Worker、加入主畫面引導（iOS 16.4+）
 - Supabase：`push_subscriptions`（只存清運點 id，不存位置）
 - Cloudflare Worker cron：每分鐘判斷「車距離訂閱的點 < N 站或 < X 公尺」就推播
-- 到站預估（ETA）：用 GPS 軌跡對照路線上的站序（`rank`）估算
+- 到站預估（ETA）：在「還差幾站」（Phase 1 已完成）之上，用 GPS 軌跡估算每站實際耗時
 
 **Phase 3 — 多城市**
 - 台北、桃園等 provider；評估是否需要 PostGIS 做全台空間索引
@@ -100,6 +101,7 @@ Gaps in the GPT plan that Phase 1 must handle:
 - [x] New Taipei provider: stops (paged fetch + cache) and live GPS
 - [x] `/api/nearby` and `/api/trucks` route handlers
 - [x] Home: locate → nearby stop list (next pickup, services, distance) → map with stops and live trucks
+- [x] Show "truck is near stop X, N stops before yours" (GPS matched to route order; says so when a looping route makes it ambiguous, see D9)
 - [ ] Evaluate the "stops remaining" matcher on real GPS traces (collector done: `bun run collect:traces`, see docs/data-sources/new-taipei.md)
 - [ ] Manual location picking (no geolocation permission, or checking another address)
 - [ ] Favorite stops (localStorage)
@@ -109,7 +111,7 @@ Gaps in the GPT plan that Phase 1 must handle:
 - Web App Manifest, Service Worker, Add-to-Home-Screen onboarding (iOS 16.4+)
 - Supabase `push_subscriptions` (stop ids only, never locations)
 - Cloudflare Worker cron: every minute, push when a truck is within N stops or X meters of a subscribed stop
-- ETA estimation from GPS traces against route stop order (`rank`)
+- ETA estimation: build on the Phase 1 "stops remaining" count with per-stop timing from GPS traces
 
 **Phase 3 — More cities**
 - Taipei, Taoyuan providers; evaluate PostGIS for a nationwide spatial index
