@@ -2,9 +2,10 @@
 // 所在層：src/lib；純函式，瀏覽器端元件共用，讓同一種資訊在每張卡片上說法一致。
 // 主要關聯：src/components/PlaceCard.tsx、src/components/PlaceDetail.tsx、src/components/NearbyView.tsx、src/components/TruckStatus.tsx、tests/unit/format.test.ts。
 
-import { stopsUntil, type RouteProgress } from "@/domain/route-progress";
+import { stopsUntil } from "@/domain/route-progress";
 import type { NextPickup } from "@/domain/schedule";
 import type { ServiceType, Weekday } from "@/domain/types";
+import type { ProgressUnavailableReason, TruckProgress } from "./api-contract";
 
 export const SERVICE_LABEL: Record<ServiceType, string> = {
   garbage: "一般垃圾",
@@ -53,8 +54,14 @@ export function formatCountdown(pickup: Pick<NextPickup, "dayOffset" | "minutesU
  * 也不換算成分鐘：還沒有可靠的估算模型前，不能把站數說成預計到達時間（AGENTS.md § 3.4）。
  * 車的站序已超過這一站時只說「可能已經過了」：比對有誤差，車也可能漏收後折返。
  */
-export function formatRouteProgress(progress: RouteProgress | null, stopSequence: number): string {
-  if (!progress) return "暫時無法判斷車開到第幾站";
+const UNAVAILABLE_TEXT: Record<ProgressUnavailableReason, string> = {
+  scheduleLoading: "班表載入中，稍後顯示車開到第幾站",
+  scheduleFailed: "班表抓取失敗，無法判斷車開到第幾站",
+  routeNotInSchedule: "班表裡找不到這條路線，無法判斷車開到第幾站",
+};
+
+export function formatRouteProgress(progress: TruckProgress, stopSequence: number): string {
+  if (progress.status === "unavailable") return UNAVAILABLE_TEXT[progress.reason];
   if (progress.status === "ambiguous") return "路線會繞回這一帶，無法判斷車開到第幾站";
   if (progress.status === "offRoute") return "車目前不在路線的站點附近，無法判斷開到第幾站";
   const remaining = stopsUntil(progress, stopSequence);

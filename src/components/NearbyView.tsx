@@ -6,7 +6,7 @@
 
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useRef } from "react";
-import { distanceMeters } from "@/domain/geo";
+import { pickTruckForStop } from "@/domain/route-progress";
 import { DEMO_LABEL, useGeolocation } from "@/hooks/useGeolocation";
 import { useNearbyStops } from "@/hooks/useNearbyStops";
 import { useNow } from "@/hooks/useNow";
@@ -48,12 +48,9 @@ export function NearbyView() {
     for (const truck of trucks) byRoute.set(truck.routeId, [...(byRoute.get(truck.routeId) ?? []), truck]);
     const result = new Map<string, TruckNearStop>();
     for (const stop of nearby.places?.flatMap((p) => p.place.stops) ?? []) {
-      // 同一路線偶爾會有兩台車（上游實測有重複 lineid），取離這個點最近的那台。
-      for (const truck of byRoute.get(stop.routeId) ?? []) {
-        const d = distanceMeters(stop.location, truck.location);
-        const current = result.get(stop.id);
-        if (!current || d < current.distanceM) result.set(stop.id, { truck, distanceM: d });
-      }
+      // 同一路線偶爾會有兩台車（上游實測有重複 lineid）；優先顯示還沒到這一站的那台，規則見 pickTruckForStop。
+      const picked = pickTruckForStop(stop, byRoute.get(stop.routeId) ?? []);
+      if (picked) result.set(stop.id, picked);
     }
     return result;
   }, [trucks, nearby.places]);

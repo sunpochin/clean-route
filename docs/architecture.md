@@ -20,7 +20,7 @@ Next.js route handlers（src/app/api）
   ▼
 src/server（Next 專屬接點）
   │ stop-cache：程序內快取 12h、同時請求合併；過期先回舊資料並以 after() 背景刷新，失敗退避 5 分鐘
-  │ /api/trucks 另用現成快照的「路線 → 站」索引，把每台車對到站序（不等上游）
+  │ /api/trucks 另用現成快照的「路線 → 站」索引，把每台車對到站序（不等上游；回應後以 after() 載入／刷新快照）
   │ next-fetcher：把 provider 的快取秒數轉成 Next data cache 的 next.revalidate
   ▼
 src/providers/registry → src/providers/new-taipei（純 TypeScript，可搬進 Worker）
@@ -56,7 +56,7 @@ src/providers/registry → src/providers/new-taipei（純 TypeScript，可搬進
 
 - `routes`：1–40 個路線代碼。
 - 200：`{ trucks: TrackedTruck[], fetchedAt }`，`Cache-Control: public, s-maxage=15`。
-  - `TrackedTruck` = `GarbageTruck` + `progress`：`{ status: "matched", sequence, distanceM }`（車在第幾站附近）、`{ status: "ambiguous" }`（路線繞回、分不出是哪次經過）、`{ status: "offRoute" }`（附近沒有這條路線的站），或 `null`（這台伺服器的班表尚未載入，已在背景載入；或班表沒有這條路線）。比對方式見 [`DECISIONS.md`](DECISIONS.md) D9。空陣列代表「這些路線目前沒有車回報位置」，是合法狀態；上游有資料但超過 20% 解析失敗時改回 502。
+  - `TrackedTruck` = `GarbageTruck` + `progress`：`{ status: "matched", sequence, distanceM }`（車在第幾站附近）、`{ status: "ambiguous" }`（路線繞回、分不出是哪次經過）、`{ status: "offRoute" }`（附近沒有這條路線的站），或 `{ status: "unavailable", reason }`，`reason` 為 `scheduleLoading`（這台伺服器的班表還在背景載入）、`scheduleFailed`（班表抓取失敗）、`routeNotInSchedule`（班表沒有這條路線）。比對方式見 [`DECISIONS.md`](DECISIONS.md) D9。空陣列代表「這些路線目前沒有車回報位置」，是合法狀態；上游有資料但超過 20% 解析失敗時改回 502。
 - 前端路線超過 40 條時分批查詢；只有「該批成功」的路線才能顯示「沒有車回報」，其餘顯示「無法取得」。
 - 400 `bad_request`；502 `upstream_unavailable`。
 

@@ -24,12 +24,18 @@ export interface NearbyResponse {
   skippedUpstreamRows: number;
 }
 
+/**
+ * 沒有比對站序的原因。三者分開是為了讓畫面說實話（AGENTS.md § 3.4）：
+ * 「班表還在載入」會自己好，「班表抓取失敗」是上游出問題，「班表裡沒有這條路線」是資料對不上——使用者該有的預期都不同。
+ */
+export type ProgressUnavailableReason = "scheduleLoading" | "scheduleFailed" | "routeNotInSchedule";
+
+/** 比對結果（matched／ambiguous／offRoute），或根本沒辦法比對（unavailable）。 */
+export type TruckProgress = RouteProgress | { status: "unavailable"; reason: ProgressUnavailableReason };
+
 export interface TrackedTruck extends GarbageTruck {
-  /**
-   * 車在路線上開到第幾站（伺服器以全路線班表比對）。
-   * null 代表這次無法比對（這台伺服器的班表尚未載入，或班表裡沒有這條路線），和「比對過但分不出來」（ambiguous）是不同的事，畫面說法也不同。
-   */
-  progress: RouteProgress | null;
+  /** 車在路線上開到第幾站（伺服器以全路線班表比對，見 docs/DECISIONS.md D9）。 */
+  progress: TruckProgress;
 }
 
 export interface TrucksResponse {

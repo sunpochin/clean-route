@@ -17,8 +17,15 @@ import { distanceMeters } from "./geo";
  */
 export const ROUTE_MATCH_RADIUS_M = 80;
 
-/** 候選站的站序相差不超過這個值，就視為同一段路（同一次經過）。 */
+/** 候選站的站序相差不超過這個值，就視為同一段路（同一次經過）；容許中間夾一兩站在半徑外。 */
 export const SAME_PASS_MAX_SEQUENCE_GAP = 3;
+
+/**
+ * 一段路從第一個候選站起算，最多涵蓋幾個站序。只看相鄰差距的話，5 → 8 → 11 會被串成同一段，
+ * 但 5 和 11 相差 6 站、中間的站都不在附近，其實是繞回來的第二次經過（PR #6 review）。
+ * 上限 4 與「站序差 ≥ 5 才算繞回」的實測定義一致；模擬中 >5 站的誤判從 0.06% 降到 0%，代價是回答率少約 7 個百分點。
+ */
+export const MAX_PASS_SEQUENCE_SPAN = 4;
 
 /**
  * 有多段路都在附近時，表定時刻最接近的那段必須領先第二名這麼多分鐘才採用。
@@ -52,13 +59,17 @@ export function matchRouteProgress(routeStops: readonly GarbageStop[], position:
   }
   if (candidates.length === 0) return { status: "offRoute" };
 
-  // 依站序切成「路段」：站序相連（差距 ≤ 門檻）的候選屬於同一次經過。
+  // 依站序切成「路段」：與前一個候選相連、且整段不超過跨度上限，才屬於同一次經過。
   candidates.sort((a, b) => a.stop.sequence - b.stop.sequence);
   const passes: Candidate[][] = [];
   for (const candidate of candidates) {
     const current = passes.at(-1);
-    const last = current?.at(-1);
-    if (current && last && candidate.stop.sequence - last.stop.sequence <= SAME_PASS_MAX_SEQUENCE_GAP) current.push(candidate);
+    const sequence = candidate.stop.sequence;
+    const joins =
+      current !== undefined &&
+      sequence - current[current.length - 1].stop.sequence <= SAME_PASS_MAX_SEQUENCE_GAP &&
+      sequence - current[0].stop.sequence <= MAX_PASS_SEQUENCE_SPAN;
+    if (joins) current.push(candidate);
     else passes.push([candidate]);
   }
 
@@ -100,6 +111,38 @@ function scheduleGapMinutes(pass: readonly Candidate[], minute: number): number 
  */
 export function stopsUntil(progress: Extract<RouteProgress, { status: "matched" }>, targetSequence: number): number {
   return targetSequence - progress.sequence;
+}
+
+type MatchedProgress = Extract<RouteProgress, { status: "matched" }>;
+
+function matchedOf(progress: { status: string }): MatchedProgress | null {
+  return progress.status === "matched" ? (progress as MatchedProgress) : null;
+}
+
+/**
+ * 同一條路線偶爾有兩台車同時在線（上游實測），這一站該顯示哪一台：
+ * 1. 還沒到這一站的車（站序 ≤ 這一站），取最快到的那台——使用者要知道的是「下一台什麼時候來」；
+ * 2. 判斷不出站序的車，取最近的——它可能還沒到，不能排除；
+ * 3. 只有所有車都已超過這一站，才顯示已超過的那台，畫面才會說「可能已經過了」。
+ * 若只挑離這裡最近的車，最近那台剛收完、另一台還在路上時，會誤說車已經過了（PR #6 review）。
+ */
+export function pickTruckForStop<T extends { location: LatLng; progress: { status: string } }>(
+  stop: Pick<GarbageStop, "location" | "sequence">,
+  routeTrucks: readonly T[],
+): { truck: T; distanceM: number } | null {
+  const rank = (truck: T): [number, number] => {
+    const matched = matchedOf(truck.progress);
+    const distanceM = distanceMeters(stop.location, truck.location);
+    if (matched && matched.sequence <= stop.sequence) return [0, stop.sequence - matched.sequence];
+    if (!matched) return [1, distanceM];
+    return [2, distanceM];
+  };
+  let best: { truck: T; key: [number, number] } | null = null;
+  for (const truck of routeTrucks) {
+    const key = rank(truck);
+    if (!best || key[0] < best.key[0] || (key[0] === best.key[0] && key[1] < best.key[1])) best = { truck, key };
+  }
+  return best ? { truck: best.truck, distanceM: distanceMeters(stop.location, best.truck.location) } : null;
 }
 
 /** 依 routeId 分組，給伺服器一次建好索引、每個請求只取需要的路線。 */

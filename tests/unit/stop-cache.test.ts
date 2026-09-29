@@ -1,10 +1,10 @@
-// 檔案用途：驗證清運點記憶體快取：同時請求只抓一次、過期時先回舊資料並背景刷新、刷新失敗標示 stale 並退避、完全沒資料時才報錯；peek 不觸發抓取、路線索引快取。
+// 檔案用途：驗證清運點記憶體快取：同時請求只抓一次、過期時先回舊資料並背景刷新、刷新失敗標示 stale 並退避、完全沒資料時才報錯；peek 不觸發抓取並回報冷啟動失敗、keepStopSnapshotWarm 會刷新過期快照且失敗時退避、路線索引快取。
 // 所在層：tests/unit；bun:test，注入假 fetcher。
 // 主要關聯：src/server/stop-cache.ts。
 
 import { afterEach, describe, expect, setSystemTime, test } from "bun:test";
 import type { JsonFetcher } from "@/providers/types";
-import { getStopSnapshot, peekStopSnapshot, resetStopCacheForTests, stopsByRoute } from "@/server/stop-cache";
+import { getStopSnapshot, keepStopSnapshotWarm, peekStopSnapshot, resetStopCacheForTests, stopsByRoute } from "@/server/stop-cache";
 import { rawStop } from "@/providers/new-taipei/test-fixtures";
 
 const TOTAL = 10_500;
@@ -145,21 +145,55 @@ describe("getStopSnapshot", () => {
   });
 });
 
-describe("peekStopSnapshot／stopsByRoute", () => {
+describe("peekStopSnapshot／keepStopSnapshotWarm／stopsByRoute", () => {
   test("peek 只看現有快照、不觸發上游抓取（/api/trucks 不能被冷啟動拖慢）", async () => {
     const upstream = countingFetcher();
-    expect(peekStopSnapshot("new-taipei")).toBeUndefined();
+    expect(peekStopSnapshot("new-taipei")).toEqual({ snapshot: undefined, loadFailed: false });
     expect(upstream.pageCalls).toBe(0);
 
-    await getStopSnapshot("new-taipei", upstream.fetcher);
-    const snapshot = peekStopSnapshot("new-taipei");
-    expect(snapshot?.stops.length).toBe(TOTAL);
-    expect(upstream.pageCalls).toBeGreaterThan(0);
+    await keepStopSnapshotWarm("new-taipei", upstream.fetcher);
+    expect(peekStopSnapshot("new-taipei").snapshot?.stops.length).toBe(TOTAL);
+  });
+
+  test("冷啟動失敗：peek 回報 loadFailed（不能和「還在載入」混為一談），退避期間不重打上游", async () => {
+    const upstream = countingFetcher();
+    upstream.fail();
+    setSystemTime(new Date("2026-09-28T00:00:00Z"));
+    await keepStopSnapshotWarm("new-taipei", upstream.fetcher); // 不會 reject
+    expect(peekStopSnapshot("new-taipei").loadFailed).toBe(true);
+
+    const failedCalls = upstream.failedCalls;
+    await keepStopSnapshotWarm("new-taipei", upstream.fetcher);
+    expect(upstream.failedCalls).toBe(failedCalls);
+
+    // 退避期過後重試成功：loadFailed 清除。
+    upstream.recover();
+    setSystemTime(new Date("2026-09-28T00:06:00Z"));
+    await keepStopSnapshotWarm("new-taipei", upstream.fetcher);
+    expect(peekStopSnapshot("new-taipei")).toMatchObject({ loadFailed: false });
+    expect(peekStopSnapshot("new-taipei").snapshot?.stops.length).toBe(TOTAL);
+  });
+
+  test("快照過期時 keepStopSnapshotWarm 會刷新（只靠 /api/trucks 的機器也不會永遠用舊班表）", async () => {
+    const upstream = countingFetcher();
+    setSystemTime(new Date("2026-09-28T00:00:00Z"));
+    await keepStopSnapshotWarm("new-taipei", upstream.fetcher);
+    const first = peekStopSnapshot("new-taipei").snapshot!;
+
+    // 還新鮮：不打上游。
+    const calls = upstream.pageCalls;
+    await keepStopSnapshotWarm("new-taipei", upstream.fetcher);
+    expect(upstream.pageCalls).toBe(calls);
+
+    setSystemTime(new Date("2026-09-28T13:00:00Z"));
+    await keepStopSnapshotWarm("new-taipei", upstream.fetcher);
+    expect(upstream.pageCalls).toBeGreaterThan(calls);
+    expect(peekStopSnapshot("new-taipei").snapshot).not.toBe(first);
   });
 
   test("路線索引依快照快取：同一份快照回傳同一個索引", async () => {
     await getStopSnapshot("new-taipei", countingFetcher().fetcher);
-    const snapshot = peekStopSnapshot("new-taipei")!;
+    const snapshot = peekStopSnapshot("new-taipei").snapshot!;
     const index = stopsByRoute(snapshot);
     expect(stopsByRoute(snapshot)).toBe(index);
     const total = [...index.values()].reduce((sum, stops) => sum + stops.length, 0);

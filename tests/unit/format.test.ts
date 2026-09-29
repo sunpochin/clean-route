@@ -60,13 +60,16 @@ describe("formatRouteProgress", () => {
     expect(formatRouteProgress(at(20), 18)).toBe("車可能已經過了（車在第 20 站附近，這裡是第 18 站）");
   });
 
-  test("判斷不出來的三種情況各有說法，且都不出現站數", () => {
+  test("判斷不出來的每種原因各有說法，且都不出現站數；「班表抓取失敗」要明說是失敗", () => {
     const texts = [
-      formatRouteProgress(null, 18),
       formatRouteProgress({ status: "ambiguous" }, 18),
       formatRouteProgress({ status: "offRoute" }, 18),
+      formatRouteProgress({ status: "unavailable", reason: "scheduleLoading" }, 18),
+      formatRouteProgress({ status: "unavailable", reason: "scheduleFailed" }, 18),
+      formatRouteProgress({ status: "unavailable", reason: "routeNotInSchedule" }, 18),
     ];
-    expect(new Set(texts).size).toBe(3);
-    for (const text of texts) expect(text).toContain("無法判斷");
+    expect(new Set(texts).size).toBe(texts.length);
+    for (const text of texts) expect(text).not.toMatch(/還差/);
+    expect(formatRouteProgress({ status: "unavailable", reason: "scheduleFailed" }, 18)).toContain("抓取失敗");
   });
 });

@@ -1,9 +1,9 @@
-// 檔案用途：驗證垃圾車 GPS → 路線站序的比對：一般情況、離開路線、路線繞回同一帶時用表定時刻分辨或明說無法判斷，以及台北時區。
+// 檔案用途：驗證垃圾車 GPS → 路線站序的比對：一般情況、離開路線、路線繞回同一帶時用表定時刻分辨或明說無法判斷、台北時區，以及同路線多台車時該顯示哪一台。
 // 所在層：tests/unit；bun:test。
 // 主要關聯：src/domain/route-progress.ts、docs/DECISIONS.md D9。
 
 import { describe, expect, test } from "bun:test";
-import { groupStopsByRoute, matchRouteProgress, stopsUntil } from "@/domain/route-progress";
+import { groupStopsByRoute, matchRouteProgress, pickTruckForStop, stopsUntil } from "@/domain/route-progress";
 import type { GarbageStop, LatLng, ServiceType } from "@/domain/types";
 import { formatTimeOfDay } from "@/domain/time";
 import { BANQIAO_STATION } from "../fixtures/landmarks";
@@ -88,6 +88,49 @@ describe("matchRouteProgress", () => {
       // 若誤把 11:44 當成當地時間，較早那次經過（19:04）反而比較近，會選成第 5 站。
       expect(matchRouteProgress(loopRoute("19:45"), north(5), AT_1944)).toMatchObject({ status: "matched", sequence: 17 });
     });
+  });
+
+  test("跳站串接不能把繞回的兩次經過併成一段（5 → 8 → 11，PR #6 review）", () => {
+    // 只有 5、8、11 在同一個路口，中間的站都在別處：11 與 5 相差 6 站，是第二次經過。
+    const route = straightRoute(20);
+    route[7] = stop(8, north(5), "19:07");
+    route[10] = stop(11, north(5), "19:10");
+    // 兩段表定時刻很近（19:04–19:07 vs 19:10），分不出來就要說 ambiguous，而不是自信地回某一站。
+    expect(matchRouteProgress(route, north(5), AT_1906)).toEqual({ status: "ambiguous" });
+  });
+});
+
+describe("pickTruckForStop", () => {
+  const here = stop(18, north(18), "19:17");
+  const truck = (id: string, steps: number, progress: { status: string; sequence?: number }) => ({
+    id,
+    location: north(steps),
+    progress: progress as { status: string },
+  });
+
+  test("最近的車已經過了、另一台還在路上：顯示還在路上的那台（PR #6 review）", () => {
+    const passed = truck("passed", 19, { status: "matched", sequence: 19 });
+    const coming = truck("coming", 12, { status: "matched", sequence: 12 });
+    expect(pickTruckForStop(here, [passed, coming])?.truck.id).toBe("coming");
+  });
+
+  test("兩台都還沒到：取站數最少（最快到）的那台", () => {
+    const far = truck("far", 5, { status: "matched", sequence: 5 });
+    const near = truck("near", 15, { status: "matched", sequence: 15 });
+    expect(pickTruckForStop(here, [far, near])?.truck.id).toBe("near");
+  });
+
+  test("判斷不出站序的車排在已經過的車前面：它可能還沒到", () => {
+    const passed = truck("passed", 19, { status: "matched", sequence: 19 });
+    const unknown = truck("unknown", 30, { status: "ambiguous" });
+    expect(pickTruckForStop(here, [passed, unknown])?.truck.id).toBe("unknown");
+  });
+
+  test("只有已經過的車時才顯示它；距離照實計算；沒有車回 null", () => {
+    const picked = pickTruckForStop(here, [truck("passed", 19, { status: "matched", sequence: 19 })]);
+    expect(picked?.truck.id).toBe("passed");
+    expect(picked?.distanceM).toBeGreaterThan(100);
+    expect(pickTruckForStop(here, [])).toBeNull();
   });
 });
 
