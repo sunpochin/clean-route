@@ -156,3 +156,5 @@ next-env.d.ts
 *.pem
 # 由 scripts/copy-maplibre-worker.ts 於 predev／prebuild 產生，跟著已安裝的 maplibre-gl 版本走。
 /public/maplibre/
+# scripts/collect-truck-traces.ts 收集的 GPS 軌跡與班表快照：公開資料但檔案大、與程式碼無關，只留在本機。
+/data/

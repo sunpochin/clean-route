@@ -48,6 +48,7 @@ GPT 漏掉、但 Phase 1 必須處理的事：
 - [x] `/api/nearby`、`/api/trucks` route handler
 - [x] 首頁：定位 → 附近清運點列表（下一班時間、收哪幾種、距離）→ 地圖顯示清運點與即時車輛
 - [x] 顯示「車在第幾站附近、離這一站還差約幾站」（GPS 對站序；路線繞回分不出時明說，見 D9）
+- [ ] 用真實 GPS 軌跡評估「還差幾站」的比對（收集腳本已完成：`bun run collect:traces`，見 docs/data-sources/new-taipei.md）
 - [ ] 手動選點（不授權定位、或想看別的地址時）
 - [ ] 收藏清運點（localStorage）
 - [ ] 部署到 Vercel、加上 CI
@@ -101,6 +102,7 @@ Gaps in the GPT plan that Phase 1 must handle:
 - [x] `/api/nearby` and `/api/trucks` route handlers
 - [x] Home: locate → nearby stop list (next pickup, services, distance) → map with stops and live trucks
 - [x] Show "truck is near stop X, N stops before yours" (GPS matched to route order; says so when a looping route makes it ambiguous, see D9)
+- [ ] Evaluate the "stops remaining" matcher on real GPS traces (collector done: `bun run collect:traces`, see docs/data-sources/new-taipei.md)
 - [ ] Manual location picking (no geolocation permission, or checking another address)
 - [ ] Favorite stops (localStorage)
 - [ ] Deploy to Vercel; CI
