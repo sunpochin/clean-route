@@ -1,3 +1,7 @@
+# 檔案用途：git 不追蹤的檔案清單——相依套件、建置產物、環境變數與金鑰、本機產生的資料。
+# 所在層：專案根目錄設定；前半段沿用 GitHub 的 Node 範本，專案自己的規則集中在檔尾「clean-route 專案補充」。
+# 主要關聯：AGENTS.md § 3.1（受保護資源：.env*、金鑰）、scripts/copy-maplibre-worker.ts、scripts/collect-truck-traces.ts（產物位置）。
+
 # Logs
 logs
 *.log
