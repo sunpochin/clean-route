@@ -51,6 +51,26 @@
 - 上游本身延遲約 1–2.5 分鐘（中位數 1.3 分鐘），所以過期門檻設 5 分鐘（`src/domain/freshness.ts`）。
 - 偶有同一 `lineid` 兩台車同時在線。
 
+## 收集 GPS 軌跡（站序比對的評估集）
+
+「車開到第幾站」的比對（`src/domain/route-progress.ts`、DECISIONS D9）目前的準確率只有模擬數據；模擬假設車剛好停在某站旁，沒有兩站之間的行駛、實際晚到、暫停與回場。要知道真實表現，先收軌跡：
+
+```bash
+bun run collect:traces              # 每 30 秒抓一次，Ctrl+C 停止
+bun run collect:traces --hours 8    # 跑滿 8 小時自動停；另有 --interval 秒數、--out 目錄
+```
+
+- 白天跑（約 06–22 時有車；凌晨上游常只剩 0～1 台），建議連收 2～3 天含平日與週末。
+- 輸出在 `data/traces/`（已 gitignore），全部依**台北日期**切檔：
+  - `stops-YYYY-MM-DD.json`：每個台北日期一份班表快照（跨夜連跑會自動補隔天的），格式 `{ loadedAt, skipped, stops: GarbageStop[] }`，評估時要用「當時的班表」。先寫暫存檔再改名，正式檔名下不會出現寫到一半的檔案。
+  - `trucks-YYYY-MM-DD.jsonl`：一行一筆 `{ fetchedAt, id, routeId, recordedAt, lat, lng, district }`；同一車牌同一 `recordedAt` 只寫一次，重啟後會從今天與昨天的檔案接回去重狀態。
+  - `polls-YYYY-MM-DD.jsonl`：**每一次抓取**一行，成功是 `{ fetchedAt, ok: true, online, written, stopsSnapshot }`，失敗是 `{ fetchedAt, ok: false, error, stopsSnapshot }`。評估時用它分辨「上游掛了」（`ok: false`）和「真的沒車」（`ok: true, online: 0`）；`stopsSnapshot: false` 的時段代表當天班表快照還沒存好。
+- 錯誤分兩種：上游抓不到會記進 polls 檔並繼續（連續 10 次會特別提醒）；寫檔失敗（磁碟滿、權限）直接中止並回傳結束碼 1，不會假裝成功。
+- 跨夜時新一天的班表若一直抓不到，軌跡照存（錯過就沒了），但結束時會列出缺班表的日期並以結束碼 1 結束，評估時這幾天要標為不完整。
+- 只存正規化後的欄位（AGENTS.md § 3.2），且不含任何使用者位置（§ 3.5）。
+
+有了軌跡之後的下一步：用車的前後位置推出它實際的站序當作近似答案，量出比對的回答率與錯誤率，再決定要不要做第二版（例如記住每台車先前的站序）。
+
 ## TLS 注意
 
 Python 3.13+ 預設嚴格驗證 X.509，會因「Missing Subject Key Identifier」拒絕這個網站的憑證鏈；Node／bun／curl 正常。寫探勘腳本請用 bun。
